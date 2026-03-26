@@ -1,6 +1,6 @@
 ---
 name: celo-names-registration
-description: Use for any task involving celo.eth name [celonames] registration, price checks, renewals, transfers, primary name setup, or reading name records. Use this skill even if the user just says "register a name on Celo" or "check if a .celo.eth name is available".
+description: Activates for any task involving celo.eth name registration, price checks, renewals, transfers, editing records, primary name setup, or reading name records. Use this skill even if the user just says "register a name on Celo" or "check if a .celo.eth name is available".
 ---
 
 # Celo Names Registration
@@ -128,6 +128,30 @@ function node(address addr) pure returns (bytes32)
 ```
 
 Pass only the label to the registrar -- `alice`, not `alice.celo.eth`.
+
+## Editing resolver records (text + address)
+
+To update **text** and/or **address** records for an existing name, call the record setters on `L2Registry` for the node (`namehash("label.celo.eth")`). The caller must be the **name owner** (ERC-721 owner for `uint256(node)`).
+
+Use `multicall(data[])` to bundle multiple updates into **one transaction**.
+
+```
+1. node = namehash("alice.celo.eth")
+2. owner = ownerOf(uint256(node))  → must equal msg.sender
+3. data = [
+     abi.encodeCall(setAddr, (node, 0xYourEvmAddress)),
+     abi.encodeCall(setText, (node, "email", "me@domain.com")),
+     abi.encodeCall(setText, (node, "url", "https://example.com"))
+   ]
+4. multicall(data)
+```
+
+Notes:
+
+- **EVM address record**: `setAddr(bytes32 node, address a)` updates the standard EVM `addr()` record.
+- **Multi-chain address records**: use `setAddr(bytes32 node, uint256 coinType, bytes a)` for non-EVM coin types (the record is returned by `addr(node, coinType)`).
+- **Deleting text records**: set the value to `""` (empty string). For addresses, set to `address(0)` (EVM) or `0x` (bytes).
+- When batching updates, ensure every encoded call uses the same `node`.
 
 ## Computing namehash
 

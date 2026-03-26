@@ -168,6 +168,28 @@ cast send $REGISTRY \
   --rpc-url $CELO_RPC
 ```
 
+### Edit records in one transaction (multicall)
+
+This batches **address + multiple text updates** for the same node into a single transaction.
+
+```bash
+NODE=$(cast namehash "myname.celo.eth")
+
+# Build each inner call's calldata (each element is a bytes-encoded function call).
+CALL_SETADDR=$(cast calldata "setAddr(bytes32,address)" $NODE 0xYourAddress)
+CALL_SETAVATAR=$(cast calldata "setText(bytes32,string,string)" $NODE "avatar" "https://example.com/avatar.png")
+CALL_SETEMAIL=$(cast calldata "setText(bytes32,string,string)" $NODE "email" "me@domain.com")
+
+# multicall expects: data[] where each item is one of the above calldata blobs.
+DATA="[${CALL_SETADDR},${CALL_SETAVATAR},${CALL_SETEMAIL}]"
+
+cast send $REGISTRY \
+  "multicall(bytes[])" \
+  "$DATA" \
+  --private-key $PRIVATE_KEY \
+  --rpc-url $CELO_RPC
+```
+
 ---
 
 ## Scripts
