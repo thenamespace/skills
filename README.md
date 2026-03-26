@@ -12,20 +12,20 @@ Create and manage gasless ENS subnames off-chain using the `@thenamespace/offcha
 - **Setup**: `npm install @thenamespace/offchain-manager`
 - **Entry point**: [`skills/offchain-ens-subname-sdk/SKILL.md`](skills/offchain-ens-subname-sdk/SKILL.md)
 
-### `skills/celo-names-registration`
+### `skills/celonames`
 
 Register, renew, and manage Celo Names (`*.celo.eth`) on-chain via the L2Registrar contract on Celo mainnet. Names are ERC721 NFTs with cross-chain resolution via CCIP-Read.
 
 - **Auth**: Wallet with CELO or stablecoin balance
 - **Setup**: Celo RPC access (e.g., `https://forno.celo.org`)
-- **Entry point**: [`skills/celo-names-registration/SKILL.md`](skills/celo-names-registration/SKILL.md)
+- **Entry point**: [`skills/celonames/SKILL.md`](skills/celonames/SKILL.md)
 
 ## Which skill should I use?
 
 | Scenario                                                  | Skill                      |
 | --------------------------------------------------------- | -------------------------- |
 | I want gasless, off-chain subnames for my app's users     | `offchain-ens-subname-sdk` |
-| Your agent needs to register a `*.celo.eth` name on-chain | `celo-names-registration`  |
+| Your agent needs to register a `*.celo.eth` name on-chain | `celonames`                |
 
 ## Installation
 

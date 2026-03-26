@@ -1,9 +1,9 @@
 ---
-name: celo-names-registration
+name: celonames
 description: Activates for any task involving celo.eth name registration, price checks, renewals, transfers, editing records, primary name setup, or reading name records. Use this skill even if the user just says "register a name on Celo" or "check if a .celo.eth name is available".
 ---
 
-# Celo Names Registration
+# Celo Names
 
 Celo Names is an ENS-based naming system on Celo L2. Names are subnames of `celo.eth`, formatted as `{label}.celo.eth` (e.g., `alice.celo.eth`). Each name is an ERC-721 NFT on Celo. Cross-chain resolution from Ethereum L1 works via CCIP-Read.
 
