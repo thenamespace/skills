@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "skills/skills/resolvio/**"
+      - "skills/resolvio/**"
   workflow_dispatch:
 
 permissions:
@@ -16,10 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout target repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: thenamespace/resolvio
           token: ${{ secrets.CROSS_REPO_SYNC_TOKEN }}
@@ -28,7 +28,7 @@ jobs:
       - name: Sync skill files
         run: |
           mkdir -p target/.agent/skills/resolvio
-          rsync -av --delete skills/skills/resolvio/ target/.agent/skills/resolvio/
+          rsync -av --delete skills/resolvio/ target/.agent/skills/resolvio/
 
       - name: Create pull request in target repository
         uses: peter-evans/create-pull-request@v6
@@ -40,7 +40,7 @@ jobs:
           delete-branch: true
           title: "chore: sync Resolvio skill from skills repo"
           body: |
-            Automated sync triggered by changes to `skills/skills/resolvio/**` in `thenamespace/skills`.
+            Automated sync triggered by changes to `skills/resolvio/**` in `thenamespace/skills`.
             This PR updates `.agent/skills/resolvio/**` in `thenamespace/resolvio`.
 
   sync-to-resolvio-landing:
@@ -48,10 +48,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Checkout target repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: thenamespace/resolvio-landing
           token: ${{ secrets.CROSS_REPO_SYNC_TOKEN }}
@@ -59,7 +59,7 @@ jobs:
 
       - name: Sync landing skill file
         run: |
-          cp skills/skills/resolvio/SKILL.md target/public/Skill.md
+          cp skills/resolvio/SKILL.md target/public/Skill.md
 
       - name: Create pull request in target repository
         uses: peter-evans/create-pull-request@v6
@@ -71,5 +71,5 @@ jobs:
           delete-branch: true
           title: "chore: sync Resolvio skill from skills repo"
           body: |
-            Automated sync triggered by changes to `skills/skills/resolvio/**` in `thenamespace/skills`.
+            Automated sync triggered by changes to `skills/resolvio/**` in `thenamespace/skills`.
             This PR updates `public/Skill.md` in `thenamespace/resolvio-landing`.
