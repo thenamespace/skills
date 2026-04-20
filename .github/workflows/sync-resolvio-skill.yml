@@ -1,0 +1,75 @@
+name: Sync Resolvio Skill Outbound
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "skills/skills/resolvio/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-to-resolvio:
+    name: Sync to resolvio
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: thenamespace/resolvio
+          token: ${{ secrets.CROSS_REPO_SYNC_TOKEN }}
+          path: target
+
+      - name: Sync skill files
+        run: |
+          mkdir -p target/.agent/skills/resolvio
+          rsync -av --delete skills/skills/resolvio/ target/.agent/skills/resolvio/
+
+      - name: Create pull request in target repository
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.CROSS_REPO_SYNC_TOKEN }}
+          path: target
+          commit-message: "chore: sync Resolvio skill from skills repo"
+          branch: "chore/sync-resolvio-skill-from-skills"
+          delete-branch: true
+          title: "chore: sync Resolvio skill from skills repo"
+          body: |
+            Automated sync triggered by changes to `skills/skills/resolvio/**` in `thenamespace/skills`.
+            This PR updates `.agent/skills/resolvio/**` in `thenamespace/resolvio`.
+
+  sync-to-resolvio-landing:
+    name: Sync to resolvio-landing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: thenamespace/resolvio-landing
+          token: ${{ secrets.CROSS_REPO_SYNC_TOKEN }}
+          path: target
+
+      - name: Sync landing skill file
+        run: |
+          cp skills/skills/resolvio/SKILL.md target/public/Skill.md
+
+      - name: Create pull request in target repository
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.CROSS_REPO_SYNC_TOKEN }}
+          path: target
+          commit-message: "chore: sync Resolvio skill from skills repo"
+          branch: "chore/sync-resolvio-skill-from-skills"
+          delete-branch: true
+          title: "chore: sync Resolvio skill from skills repo"
+          body: |
+            Automated sync triggered by changes to `skills/skills/resolvio/**` in `thenamespace/skills`.
+            This PR updates `public/Skill.md` in `thenamespace/resolvio-landing`.
