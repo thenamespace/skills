@@ -20,12 +20,21 @@ Register, renew, and manage Celo Names (`*.celo.eth`) on-chain via the L2Registr
 - **Setup**: Celo RPC access (e.g., `https://forno.celo.org`)
 - **Entry point**: [`skills/celonames/SKILL.md`](skills/celonames/SKILL.md)
 
+### `skills/resolvio`
+
+Resolve ENS names and addresses via the Resolvio API, including full profile lookups (texts, addresses, contenthash) and batch reverse resolution for leaderboards/tables.
+
+- **Auth**: None required
+- **Setup**: HTTP client (examples use `curl`)
+- **Entry point**: [`skills/resolvio/SKILL.md`](skills/resolvio/SKILL.md)
+
 ## Which skill should I use?
 
 | Scenario                                                  | Skill                      |
 | --------------------------------------------------------- | -------------------------- |
 | I want gasless, off-chain subnames for my app's users     | `offchain-ens-subname-sdk` |
 | Your agent needs to register a `*.celo.eth` name on-chain | `celonames`                |
+| I need ENS profile/reverse resolution over HTTP           | `resolvio`                 |
 
 ## Installation
 
