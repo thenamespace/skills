@@ -28,13 +28,22 @@ Resolve ENS names and addresses via the Resolvio API, including full profile loo
 - **Setup**: HTTP client (examples use `curl`)
 - **Entry point**: [`skills/resolvio/SKILL.md`](skills/resolvio/SKILL.md)
 
+### `skills/ens-components`
+
+React UI kit for ENS and Namespace flows. Covers ENS name registration, record editing, onchain subname minting, offchain subnames, avatar/header upload, theming, and callback-driven customization. Built on wagmi.
+
+- **Auth**: None required (wallet connection handled by wagmi)
+- **Setup**: `npm install @thenamespace/ens-components`
+- **Entry point**: [`skills/ens-components/SKILL.md`](skills/ens-components/SKILL.md)
+
 ## Which skill should I use?
 
-| Scenario                                                  | Skill                      |
-| --------------------------------------------------------- | -------------------------- |
-| I want gasless, off-chain subnames for my app's users     | `offchain-ens-subname-sdk` |
-| Your agent needs to register a `*.celo.eth` name on-chain | `celonames`                |
-| I need ENS profile/reverse resolution over HTTP           | `resolvio`                 |
+| Scenario                                                          | Skill                      |
+| ----------------------------------------------------------------- | -------------------------- |
+| I want gasless, off-chain subnames for my app's users             | `offchain-ens-subname-sdk` |
+| Your agent needs to register a `*.celo.eth` name on-chain         | `celonames`                |
+| I need ENS profile/reverse resolution over HTTP                   | `resolvio`                 |
+| I want React components for ENS registration, records, or subnames | `ens-components`           |
 
 ## Installation
 
