@@ -254,6 +254,22 @@ Key props:
 - `avatarUploadDomain`
 - `onRegistrationStart`, `onRegistrationSuccess`, `onClose`, `onConnectWallet`
 
+`onRegistrationSuccess` callback shape:
+
+```ts
+{
+  durationLabel: string;      // e.g. "1 year" or "6 months, 3 days"
+  expiryDate: string;         // formatted date string
+  registrationCost: string;   // ETH
+  transactionFees: string;    // ETH
+  total: string;              // ETH
+}
+```
+
+> **Breaking change (v1.3+):** `expiryInYears: number` was removed. Use `durationLabel: string` instead.
+
+**Duration picker:** The form includes a built-in toggle between a years `+/−` picker (default) and a calendar date picker. Minimum registration is **28 days** — this is enforced by the ENS `ETHRegistrarController` contract and cannot be lowered.
+
 ### `EnsRecordsForm`
 
 Key props:
