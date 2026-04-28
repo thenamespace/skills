@@ -65,7 +65,10 @@ import { EnsNameRegistrationForm } from "@thenamespace/ens-components";
   isTestnet={false}
   avatarUploadDomain="app.example.com"
   onRegistrationSuccess={result => {
-    console.log(result.total, result.expiryDate);
+    // result.durationLabel  — human-readable duration, e.g. "1 year" or "6 months, 3 days"
+    // result.expiryDate     — formatted expiry date string
+    // result.registrationCost, result.transactionFees, result.total — ETH strings
+    console.log(result.durationLabel, result.expiryDate, result.total);
   }}
 />;
 ```
@@ -83,6 +86,7 @@ Call out that `EnsNameRegistrationForm` already handles the normal ENS flow:
 - wait period
 - register transaction
 - success screen
+- duration picker — years `+/−` by default, toggleable to a calendar date picker; minimum 28 days (contract-enforced)
 
 ### 4. Add Extras Only When Asked
 
