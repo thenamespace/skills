@@ -50,13 +50,41 @@ Anyone can call `setName('vitalik.eth')` on the Reverse Registrar from their add
 
 > "You **must** verify it by performing a forward resolution on that name to confirm it still resolves to the original address." — [docs.ens.domains/web/reverse](https://docs.ens.domains/web/reverse)
 
-**Library behavior:**
-- viem's `getEnsName` and the Universal Resolver's `reverse()` do this verification automatically.
-- ethers v6 `provider.lookupAddress()` also verifies.
-- wagmi's `useEnsName` (built on viem) verifies.
-- Custom code that walks `addr.reverse` manually does **not** verify unless you write the second resolution. Don't.
+**Library behavior — verify yours**:
 
-**The right pattern**: don't write your own reverse code. Use the library function.
+| Library | Default behavior |
+|---|---|
+| **viem** `getEnsName` (and `useEnsName` in wagmi) | Verifies by default via the Universal Resolver's `reverse()`. |
+| **ethers v6** `provider.lookupAddress()` | Historically did *not* verify automatically — check your version's docs and add the forward check yourself if it doesn't. |
+| **Custom code** walking `addr.reverse` manually | Does not verify unless you write the second resolution. Don't write this. |
+
+**If your library doesn't verify, do it yourself:**
+
+```ts
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+import { normalize } from 'viem/ens'
+
+const client = createPublicClient({ chain: mainnet, transport: http() })
+
+async function safeGetEnsName(address: `0x${string}`) {
+  const name = await client.getEnsName({ address })
+  if (!name) return null
+
+  // Forward-verify even if the library claims to — defense in depth.
+  const forward = await client.getEnsAddress({ name: normalize(name) })
+
+  // Address comparison is case-insensitive — checksum casing is informational.
+  if (forward?.toLowerCase() !== address.toLowerCase()) {
+    return null   // claim does not verify; treat as no name
+  }
+  return name
+}
+```
+
+**The case-sensitivity rule**: always `.toLowerCase()` both sides when comparing addresses. EIP-55 checksum casing is a *display* convention; equality must be done lowercased. A non-checksummed address like `0xabc…` is the same address as `0xAbC…`.
+
+**Best advice**: don't write your own reverse code. Use the library function. If you must, follow the pattern above.
 
 ## Avatars
 
@@ -108,20 +136,25 @@ The L2 reverse namespace is `<coinType-hex>.reverse`. For Optimism (chainId 10),
 
 ### How dapps should resolve a primary name
 
+The default of "always query mainnet `addr.reverse`" is **wrong** in a multi-L2 world. The correct order:
+
 ```
-1. Determine which chain you care about (the chain the user is connected to, the chain you're sending on, etc.).
-2. Query the Reverse Registrar on that chain for the address.
-3. Forward-verify the returned name on that same chain.
-4. If no name is set on that L2, fall back to mainnet (the default).
+1. Determine the chain the user is *active on* (the chain they're connected to, or the
+   chain you're sending on). That is the chain whose reverse record represents the
+   user's chosen identity in this context.
+2. Query the Reverse Registrar on THAT chain for the address.
+3. Forward-verify the returned name on the same chain.
+4. If no name is set on that L2, fall back to mainnet (the user's default identity).
 ```
 
-In viem, pass `chainId` to `getEnsName` to target a specific L2's reverse registrar.
+In viem, pass `chainId` to `getEnsName` to target a specific L2's reverse registrar. wagmi inherits this — pass `chainId` to `useEnsName`.
 
 ### UX implications
 
-- A user's "name" on Base may differ from their name on mainnet. Don't assume one stable identity across chains.
-- For a multichain leaderboard, decide whether you display the chain-specific primary or the mainnet default. Be consistent.
-- For a single-chain dapp, prefer the chain-specific primary; fall back to mainnet.
+- A user's "name" on Base may differ from their name on mainnet. **Don't assume one stable identity across chains.**
+- For a multichain leaderboard, decide whether you display the chain-specific primary or the mainnet default — and apply that choice consistently.
+- For a single-chain dapp, prefer the chain-specific primary; fall back to mainnet only if no chain-specific record exists.
+- Showing the wrong chain's name is not just a cosmetic miss — it can confuse users about which identity they're transacting under.
 
 ## Footguns
 

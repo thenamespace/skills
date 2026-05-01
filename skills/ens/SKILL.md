@@ -18,14 +18,15 @@ Most apps (~99%) only need [Scenario 1](#scenario-1--the-99-case-display-resolve
 - **Stack**: principles are stack-agnostic; concrete code defaults to **viem ≥ 2.35** + **wagmi**, with notes for ethers v6.
 - **Out of scope**: any specific naming product or registrar SDK. Pure protocol + canonical libraries only.
 
-## The four rules that apply to every ENS integration
+## The five rules that apply to every ENS integration
 
 These show up in every scenario. If a single one is missing, the integration is wrong even if it appears to work.
 
 1. **Normalize at every input boundary** with `@adraffy/ens-normalize` (or your library's wrapper). Never `toLowerCase()` an ENS name. Normalization is what prevents homoglyph attacks (`аpple.eth` with a Cyrillic `а`) and ensures `Vitalik.eth` and `vitalik.eth` hash to the same node. Apply it to: search inputs, address-book entries, anything before hashing/comparing/sending. See [references/normalization.md](references/normalization.md).
-2. **Forward-verify after every reverse resolution.** Anyone can set their reverse record to claim *any* name. The only thing that proves a name actually belongs to an address is forward-resolving the claimed name and checking it points back. Most libraries (viem, wagmi, ethers) do this for you — but verify your code path doesn't bypass it. See [references/profile.md](references/profile.md).
-3. **Don't hardcode contract addresses.** Registry, Universal Resolver, and Reverse Registrar addresses change across upgrades and per-chain deployments. Use the addresses your library ships with, or look up [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) at integration time. Universal Resolver in particular has multiple deployed versions during the ENSv2 transition.
-4. **Don't gate on `.eth` suffix.** ENS supports DNS-imported names (`.com`, `.xyz`, `.box`) and other TLDs. If you need to detect "is this an ENS name?", check for a `.` in a normalized string and try to resolve it — don't string-match TLDs.
+2. **Forward-verify after every reverse resolution.** Anyone can set their reverse record to claim *any* name. The only thing that proves a name actually belongs to an address is forward-resolving the claimed name and checking it points back. viem/wagmi do this by default; ethers v6 historically did not — verify your library's behavior or add the second resolution yourself. See [references/profile.md](references/profile.md).
+3. **For value-bearing transactions, resolve fresh against an L1 RPC** — not via a cached value, an indexer, the subgraph, or a third-party API. Cached and indexed data is eventually consistent; an updated `addr` record may not propagate for minutes. The user is signing for the *address*, so the address must be the live one at signing time. Run your own node for high-value flows, or use an audited L1 RPC provider. See [references/resolution.md](references/resolution.md).
+4. **Don't hardcode contract addresses.** Registry, Universal Resolver, and Reverse Registrar addresses change across upgrades and per-chain deployments. Use the addresses your library ships with, or look up [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) at integration time. Universal Resolver in particular has multiple deployed versions during the ENSv2 transition. See [references/ensv2-readiness.md](references/ensv2-readiness.md).
+5. **Don't gate on `.eth` suffix.** ENS supports DNS-imported names (`.com`, `.xyz`, `.box`) and other TLDs. If you need to detect "is this an ENS name?", check for a `.` in a normalized string and try to resolve it — don't string-match TLDs.
 
 ---
 
@@ -106,9 +107,12 @@ Run through this checklist. Each item maps to a section of the references. Flag 
 
 **Resolution & display**
 - [ ] All ENS name input is normalized with `@adraffy/ens-normalize` (or library wrapper) before hashing/storing/comparing. No `toLowerCase()`. ([normalization](references/normalization.md))
+- [ ] `namehash` is computed from a normalized name, never raw input; `namehash` is not confused with `labelhash`. ([records-and-subnames](references/records-and-subnames.md#namehash-mechanics))
 - [ ] Reverse resolution (`address → name`) is forward-verified before being shown. ([profile](references/profile.md#reverse-resolution))
+- [ ] Address comparisons are case-insensitive (`.toLowerCase()` both sides) — checksum casing is informational. ([profile](references/profile.md#reverse-resolution))
 - [ ] App never compares pre-normalized names — `name1 === name2` only after normalize. ([normalization](references/normalization.md))
-- [ ] When resolving on L2, the *primary name lookup* targets the L2 reverse registrar (not L1). ([profile](references/profile.md#l2-primary-names))
+- [ ] Value-bearing sends resolve fresh from an L1 RPC, not from cache, indexer, or subgraph. ([resolution](references/resolution.md))
+- [ ] Reverse records are queried on the chain where the user is *active* — not just mainnet. L2 primary names are honored. ([profile](references/profile.md#l2-primary-names))
 - [ ] When sending to an ENS name on a non-Ethereum chain, the resolution requests the right `coinType` (ENSIP-9/-11). ([resolution](references/resolution.md#multichain-coin-types))
 
 **Avatars & profile**
@@ -116,10 +120,12 @@ Run through this checklist. Each item maps to a section of the references. Flag 
 - [ ] NFT avatars verify ownership before rendering (otherwise spoof risk). ([profile](references/profile.md#avatars))
 
 **Library & infra**
-- [ ] viem is **≥ 2.35** for ENSv2 readiness; ethers users have applied the ENS patch. ([resolution](references/resolution.md#ensv2-readiness))
+- [ ] viem is **≥ 2.35** for ENSv2 readiness; ethers users have applied the ENS patch. ([ensv2-readiness](references/ensv2-readiness.md))
 - [ ] CCIP-Read is enabled (default in viem ≥ 2.35; explicit in older or custom clients). Disabling it breaks Coinbase/Base/Linea/Uni subnames. ([resolution](references/resolution.md#ccip-read))
+- [ ] CCIP-Read flows have a sane timeout and a clear "name unresolved" UI state. ([resolution](references/resolution.md#ccip-read))
 - [ ] No hardcoded ENS contract addresses. ([deployments](https://docs.ens.domains/learn/deployments))
-- [ ] No `.eth`-suffix gating. ([Rule 4](#the-four-rules-that-apply-to-every-ens-integration))
+- [ ] No `.eth`-suffix gating. ([Rule 5](#the-five-rules-that-apply-to-every-ens-integration))
+- [ ] Custom resolver code calls `supportsInterface()` (EIP-165) before invoking optional resolver methods. ([library-authors](references/library-authors.md))
 
 **Batch / leaderboard cases**
 - [ ] Bulk address→name lookups use a single multicall via the Universal Resolver, not N RPC round-trips. ([resolution](references/resolution.md#batch-resolution))
@@ -134,11 +140,13 @@ If any item misses, link the user to the matching reference and propose a concre
 Question                                                              → File
 ────────────────────────────────────────────────────────────────────────────────
 "How do I normalize? Why does my hash mismatch?"                      → references/normalization.md
-"How do I resolve a name? CCIP-Read? multichain? batch?"              → references/resolution.md
+"How do I resolve? CCIP-Read? multichain? Universal Resolver? batch?" → references/resolution.md
 "Show profile? avatar? reverse? L2 primary?"                          → references/profile.md
 "Issue subnames? text records? content hash? DNS import? ABI? on.eth" → references/records-and-subnames.md
-"Name a smart contract? query the subgraph? key contract addresses?"  → references/contracts.md
-"Build an AI agent that uses ENS as identity? MCP servers? ENSIP-25?" → references/agentic.md
+"Name a smart contract? key addresses? ENS for service discovery?"    → references/smart-contracts.md
+"Query ENS at scale? leaderboards? historical data?"                  → references/subgraph.md
+"Is my app ENSv2-ready? what changed in v2?"                          → references/ensv2-readiness.md
+"Build an AI agent that uses ENS as identity? ENSIP-25/-26 + 8004?"   → references/agentic.md
 "I'm implementing ENS in a library — what does correct look like?"    → references/library-authors.md
 ```
 
@@ -159,3 +167,7 @@ When helping a user:
 4. **For audits**, walk the checklist out loud, marking pass/fail with a short reason. End with a prioritized fix list.
 5. **For code**, prefer the user's existing library (don't migrate them off ethers to viem unsolicited).
 6. **Read the relevant reference file before writing code in an unfamiliar area** — the references contain the spec details that prevent subtle bugs.
+
+## Stay current
+
+ENS evolves through ENSIPs. The protocol that's true today (multichain primary names, CCIP-Read, ENSv2 Universal Resolver) wasn't true two years ago, and v3-shaped things will land. When something in this skill seems stale or contradicts a doc you find, **trust [docs.ens.domains](https://docs.ens.domains)** and flag the drift so this skill can be updated. Track new ENSIPs at [docs.ens.domains/ensips](https://docs.ens.domains/ensips).

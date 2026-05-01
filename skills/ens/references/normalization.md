@@ -64,9 +64,11 @@ Other useful exports:
 
 You usually don't import `@adraffy/ens-normalize` directly — your client library wraps it:
 
-- **viem**: `import { normalize } from 'viem/ens'`
-- **ethers v6**: normalization is built into `ensNormalize()` and applied automatically by `provider.resolveName()`.
-- **wagmi**: pass already-normalized names to hooks. Use viem's `normalize()`.
+- **viem**: `import { normalize } from 'viem/ens'`. High-level actions (`getEnsAddress`, `getEnsName`, `getEnsAvatar`) normalize their input. **`namehash()` does NOT** — pass it a normalized string.
+- **ethers v6**: `ensNormalize()` is exposed; `provider.resolveName()` normalizes. **`ethers.namehash()` does NOT** — pre-normalize.
+- **wagmi**: hooks normalize. If you compute hashes manually for any reason, normalize first.
+
+The high-level/low-level split is the trap: people see `getEnsAddress` working with raw input and assume `namehash` will too. It won't — you'll silently compute a hash for a node nobody resolves to.
 
 Using the library wrapper guarantees you stay in sync if the spec or vendored data updates.
 
@@ -116,7 +118,24 @@ try {
 3. **Treating subnames label-by-label.** Bidi rules and emoji ZWJ sequences are evaluated across the full name; piecewise normalization can silently change semantics.
 4. **Catching the normalize-throw.** If normalization rejects a name, it is *not* a valid ENS name. Don't silently accept it.
 5. **Server/client mismatch.** If your server rejects names that the client accepts (or vice versa), you have a bypass. Normalize on both sides with the same library.
-6. **Confusing "passes normalization" with "visually safe."** A normalized name is *cryptographically* canonical, not visually unambiguous — bidi names and mixed-script labels can still mislead users. Show the truncated address alongside the name in trust-critical UI (sends, signatures).
+6. **Confusing "passes normalization" with "visually safe."** A normalized name is *cryptographically* canonical, not visually unambiguous — bidi names and mixed-script labels can still mislead users. See [UI-side defenses](#ui-side-defenses-against-visually-confusable-names) below.
+
+## UI-side defenses against visually-confusable names
+
+Normalization rejects the worst cases (disallowed characters, malformed emoji, bare ZWJs) but cannot prevent every visual deception. A name like `аpple.eth` (Cyrillic `а`) or `ⅴitalik.eth` (Roman numeral `Ⅴ`) may be a valid normalized name yet visually impersonate a well-known one. For trust-critical UI (send flows, signing, contact lists):
+
+- **Always show the truncated 0x address next to the name.** Users learn to scan addresses; names alone hide identity.
+- **Detect mixed scripts.** If a name contains characters from more than one Unicode script (Latin + Cyrillic, Latin + Greek), flag it visually — a colored border, a warning icon, an explicit "this name mixes scripts" tooltip. `ens_tokenize` exposes per-token script info that you can group into scripts.
+- **Render confusable characters distinctly.** Pick a font that disambiguates (e.g., one with clearly different Cyrillic and Latin shapes). Avoid uniform-looking faces.
+- **Annotate the script** of unusual characters on hover ("this `а` is Cyrillic").
+- **For sends**, require an extra confirmation step when the name contains non-ASCII characters or mixed scripts.
+- **Use a same-name allowlist for major brands** if you operate a wallet or aggregator — flag any name that visually matches a known popular name but isn't it.
+
+These are UX measures, not protocol measures — they don't replace normalization, they layer on top of it.
+
+## Namehash and `labelhash` — don't conflate them
+
+A subtle related bug: `namehash` is the recursive node identifier for a full name; `labelhash` (just `keccak256(label)`) is the per-label hash used inside the namehash construction. They are not interchangeable, and mixing them silently produces "name not found" results. Always normalize before either. See [records-and-subnames.md → Namehash mechanics](records-and-subnames.md#namehash-mechanics) for the algorithm and the trap.
 
 ## Sources
 

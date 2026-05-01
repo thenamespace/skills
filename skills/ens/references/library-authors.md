@@ -12,6 +12,7 @@ If you're implementing ENS in a client library (the next viem/ethers, a Go/Rust/
 - [Content hash codecs](#content-hash-codecs)
 - [Universal Resolver path](#universal-resolver-path)
 - [Wildcard / ENSIP-10](#wildcard--ensip-10)
+- [EIP-165 interface detection](#eip-165-interface-detection)
 - [Conformance test suites](#conformance-test-suites)
 - [Footguns](#footguns)
 
@@ -130,6 +131,27 @@ Address: per chain; check [docs.ens.domains/learn/deployments](https://docs.ens.
 3. The resolver synthesizes the answer (often via CCIP-Read).
 
 The Universal Resolver handles this walk for you. If you implement resolution manually, replicate it. Don't stop at the first registered name — that misses every wildcard offchain space.
+
+## EIP-165 interface detection
+
+Resolvers can implement different combinations of interfaces — `addr(node)`, multicoin `addr(node, coinType)`, `text(node, key)`, `contenthash(node)`, `ABI(node, types)`, ENSIP-10 `resolve(name, data)`, ENSIP-24 `data(node, key)`, etc. Not every resolver implements every interface.
+
+**Your library must check `supportsInterface(bytes4) → bool`** before calling optional methods on arbitrary resolvers, and expose a graceful API to the caller (return null/empty rather than letting an unsupported call revert).
+
+Common interface IDs (for reference; canonical values come from each ENSIP):
+
+| Interface | Selector |
+|---|---|
+| `addr(bytes32)` | `0x3b3b57de` |
+| `addr(bytes32, uint256)` | `0xf1cb7e06` |
+| `text(bytes32, string)` | `0x59d1d43c` |
+| `contenthash(bytes32)` | `0xbc1c58d1` |
+| `ABI(bytes32, uint256)` | `0x2203ab56` |
+| `resolve(bytes, bytes)` (ENSIP-10) | `0x9061b923` |
+
+**Caching**: resolver shape doesn't change often. Cache `(resolver, interfaceId) → bool` for the lifetime of the client. One `supportsInterface` call per resolver per session is cheap; thousands across a session is wasteful.
+
+**Universal Resolver bypass**: most consumer reads should go through the Universal Resolver, which abstracts the interface-check question for you. Direct resolver calls (typically library-internal) need the explicit check.
 
 ## Conformance test suites
 

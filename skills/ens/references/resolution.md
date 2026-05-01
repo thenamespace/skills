@@ -7,10 +7,12 @@ How `name → address` actually works, plus the things that make it work across 
 - [How forward resolution works](#how-forward-resolution-works)
 - [The Universal Resolver](#the-universal-resolver)
 - [CCIP-Read](#ccip-read)
-- [ENSv2 readiness](#ensv2-readiness)
 - [Multichain coin types](#multichain-coin-types)
 - [Batch resolution](#batch-resolution)
+- [Fresh L1 data for value-bearing transactions](#fresh-l1-data-for-value-bearing-transactions)
 - [Footguns](#footguns)
+
+For ENSv2 readiness specifics (which library versions, what changed, the migration matrix), see [ensv2-readiness.md](ensv2-readiness.md).
 
 ---
 
@@ -44,16 +46,25 @@ L2 *primary names* (`address → name` on an L2) are a separate flow — see [pr
 
 ## The Universal Resolver
 
-**What**: A single contract that wraps registry lookup + resolver call + CCIP-Read + multicall, exposing `resolve(name, data)` and `reverse(addr)` in one shot.
+A single contract that aggregates everything resolution touches into one call. It wraps:
 
-**Why prefer it**: Manual `registry.resolver(node) → resolver.addr(node)` doesn't transparently handle:
-- ENSIP-10 wildcard resolution (offchain subnames like `jesse.base.eth`).
-- CCIP-Read (Coinbase, Linea, Uniswap, ENS-managed offchain names).
-- Reverse-then-forward verification.
+- Registry lookup (find the resolver for a namehash).
+- Resolver call (the actual `addr` / `text` / `contenthash` query).
+- ENSIP-10 wildcard fallback (walk up the tree until a wildcard resolver is found).
+- CCIP-Read (handle the gateway round-trip transparently).
+- Reverse-then-forward verification (for `reverse(addr)`).
+- Multicall (`resolve(name, data[])` for multiple records on one name in one tx).
 
-Viem and ethers wire this up automatically. **You should not call the registry directly** unless you have a specific reason; use the library's high-level actions, which target the Universal Resolver.
+**Why prefer it**: Manual `registry.resolver(node) → resolver.addr(node)` skips wildcard, CCIP-Read, and verification. So that "simpler" path is **broken** for any name that uses any of those features — which is most of mainstream ENS today (Coinbase, Base, Linea, Uniswap, every offchain space).
 
-**Address**: changes across deployments; check [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) for the current mainnet and per-L2 addresses. Don't hardcode.
+**Surface**:
+- `resolve(bytes name, bytes data) → bytes` — DNS-encoded name + ABI-encoded resolver call. Returns the result.
+- `resolve(bytes name, bytes[] data) → bytes[]` — batch records on a single name in one shot.
+- `reverse(bytes addrLower) → (string name, address resolver, address reverseResolver)` — reverse with bidirectional verification baked in.
+
+viem and ethers route through this automatically. **Use the library's high-level action; don't call the registry directly.**
+
+**Address**: multiple deployed versions exist during the ENSv2 transition, plus per-L2 deployments. Always look up [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) at integration time; never hardcode. If you must call from a smart contract, take the address from a config file and grab the ABI from [`@ensdomains/ens-contracts`](https://github.com/ensdomains/ens-contracts).
 
 ## CCIP-Read
 
@@ -70,25 +81,15 @@ Viem and ethers wire this up automatically. **You should not call the registry d
 
 **What you actually need to do as an integrator**: nothing, if you're using viem ≥ 2.35 or wagmi (CCIP-Read is on by default). If you've explicitly disabled it (`ccipRead: false` in viem) or are using a custom client, you'll silently fail to resolve `*.cb.id`, `*.linea.eth`, `*.uni.eth`, and similar.
 
+**UX considerations**:
+- CCIP-Read adds an HTTPS round-trip on top of the chain call. **Budget 1–3 seconds** for resolution in user-facing flows; longer for slow networks.
+- **Always show a clear "name unresolved" state** when resolution times out — don't leave the user staring at a spinner. A timeout is not the same as "no name set" (which returns instantly with `null`); distinguish them in the UI.
+- For send flows, render the resolved address *before* the user signs. If resolution is still pending, the sign button stays disabled.
+
 **Common failures**:
 - Disabling CCIP-Read globally because of a misunderstanding — re-enable it.
 - Corporate firewall blocking outbound HTTPS to gateway URLs.
 - Custom RPC provider that doesn't relay the gateway response.
-
-## ENSv2 readiness
-
-**Reference**: [docs.ens.domains/web/ensv2-readiness](https://docs.ens.domains/web/ensv2-readiness).
-
-ENSv2 introduces L2-native names, namechain registries, and a unified resolution API via the Universal Resolver. For most apps, "being ENSv2-ready" means three things:
-
-1. **Use a current library version**:
-   - **viem ≥ 2.35** — ENSv2 support is automatic.
-   - **ethers v6** — apply the ENS readiness patch (see ENS docs for the package).
-   - **web3.js** — deprecated for ENS work; migrate.
-2. **Don't gate on `.eth`**. ENSv2 expands what counts as an ENS name (DNS-imported, alternative TLDs). Detect ENS by attempting to resolve a normalized dotted string, not by suffix.
-3. **Don't bypass the Universal Resolver** with manual registry calls.
-
-ENSv2 doesn't break existing v1 names; it adds capability. The risk is your code accidentally taking a fast path that ignores v2-only features (e.g., querying a v1 resolver directly and missing the wildcard fallback).
 
 ## Multichain coin types
 
@@ -131,7 +132,22 @@ import { encodeFunctionData, parseAbi } from 'viem'
 Concrete approaches:
 - **viem `multicall`** against the Universal Resolver's `resolve(name, data)` for each name.
 - **wagmi `useReadContracts`** with the Universal Resolver ABI.
-- **Subgraph** for very large batches that don't need real-time data — but note offchain (CCIP-Read) names won't appear there. See [contracts.md](contracts.md#subgraph).
+- **Subgraph** for very large batches that don't need real-time data — but note offchain (CCIP-Read) names won't appear there. See [subgraph.md](subgraph.md).
+
+## Fresh L1 data for value-bearing transactions
+
+Cached resolutions, indexer data, the subgraph, and third-party ENS APIs are all *eventually* consistent. An updated `addr` record may take minutes to propagate. For displays and discovery this is fine; **for value-bearing transactions it is not**.
+
+The user is signing for the *address*. If the address you display was cached and the on-chain record changed since, the user signs for the wrong recipient. There is no recovery.
+
+Rules:
+
+- For sends, swaps, approvals, and any signed action: resolve fresh from an L1 RPC at the moment the user is about to sign.
+- Show the resolved address (full 0x or unambiguous truncation) next to the name in the confirmation UI, and re-resolve if the user delays the signature.
+- Do not use the subgraph or a cached value as the source of truth for the address being signed.
+- For high-value flows (treasury, custody, payroll), run your own Ethereum node or use an audited L1 RPC provider — and verify the integrity of the software in the resolution path.
+
+This is a generalization of [Rule 3 in SKILL.md](../SKILL.md#the-five-rules-that-apply-to-every-ens-integration). It applies regardless of library or chain.
 
 ## Footguns
 

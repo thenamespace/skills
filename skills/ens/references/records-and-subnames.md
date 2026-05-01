@@ -9,6 +9,7 @@ For apps that go beyond display/resolve — issuing subnames, editing custom rec
 - [DNS import (ENSIP-6)](#dns-import-ensip-6)
 - [Content hash (ENSIP-7)](#content-hash-ensip-7)
 - [ABI text record (ENSIP-4)](#abi-text-record-ensip-4)
+- [Arbitrary bytes records (ENSIP-24)](#arbitrary-bytes-records-ensip-24)
 - [Chain-Registry Resolver (`<chain>.on.eth`)](#chain-registry-resolver-chainoneth)
 - [Subname normalization](#subname-normalization)
 - [Footguns](#footguns)
@@ -22,15 +23,29 @@ For apps that go beyond display/resolve — issuing subnames, editing custom rec
 Namehash is a recursive keccak256 over normalized labels:
 
 ```
-namehash(""):       0x000…000
-namehash("eth"):    keccak256(namehash("") || keccak256("eth"))
-namehash("alice.eth"): keccak256(namehash("eth") || keccak256("alice"))
-namehash("a.b.c"):  keccak256(namehash("b.c") || keccak256("a"))
+namehash(""):           0x000…000
+namehash("eth"):        keccak256(namehash("") || keccak256("eth"))
+namehash("alice.eth"):  keccak256(namehash("eth") || keccak256("alice"))
+namehash("a.b.c"):      keccak256(namehash("b.c") || keccak256("a"))
 ```
 
 Every label MUST be normalized (ENSIP-15) before hashing. `Vitalik.eth` and `vitalik.eth` are the same node only because normalization makes them identical pre-hash. If you compute the hash of an unnormalized label, you'll write to a node nobody resolves to.
 
 For subnames, the hash chains: `cool.alice.eth` is `keccak(namehash("alice.eth") || keccak(normalize("cool")))`. The parent must exist; the parent owner controls subname registration in the registry.
+
+### `namehash` vs `labelhash` — don't conflate them
+
+Two related but distinct hashes:
+
+- **`namehash(name)`** — the recursive 32-byte node identifier for a *full name* (`alice.eth`, `cool.alice.eth`). This is what every registry / resolver call takes as its `node` argument.
+- **`labelhash(label)`** — just `keccak256(label)` for a *single label* (`alice`, `cool`). Used inside the namehash construction; also taken directly by some registrar functions (e.g., `register(labelhash, owner, ...)`).
+
+They are not interchangeable. Symptoms of mixing them:
+
+- Calling `resolver.addr(labelhash("vitalik"))` instead of `resolver.addr(namehash("vitalik.eth"))` → returns zero address. "Name not found." Silent.
+- Calling `registrar.register(namehash("alice.eth"), …)` instead of `registrar.register(labelhash("alice"), …)` → reverts or registers the wrong thing.
+
+Always normalize the *full* name once with `ens_normalize`, then derive whichever hash the function you're calling expects. Never roll your own — use your library's helpers (`viem.namehash`, `viem.labelhash`, `ethers.namehash`, etc.) and remember those helpers don't normalize for you.
 
 ## Subnames: onchain vs offchain
 
@@ -116,6 +131,22 @@ Resolver interface: `ABI(bytes32 node, uint256 contentType) → (uint256, bytes)
 
 Use case: dapps can fetch the ABI for a contract by ENS name without a separate registry like Etherscan. Often used together with [smart-contract naming](contracts.md#naming-a-smart-contract).
 
+## Arbitrary bytes records (ENSIP-24)
+
+**Spec**: [ENSIP-24](https://docs.ens.domains/ensip/24).
+
+Adds a generic `data(bytes32 node, bytes32 key) → bytes` field to resolvers. It's the binary analog of text records.
+
+Use cases:
+- Hashed commitments (proof-of-presence, voting receipts).
+- Interoperable address formats not covered by ENSIP-9/-11.
+- App-specific binary metadata (signatures, encrypted blobs).
+- Storage that text records can't hold (raw bytes, zero-byte values, non-UTF-8 data).
+
+When **NOT** to use: if your data is human-readable, a text record (ENSIP-5) is simpler, indexable in the subgraph, and broadly supported by tools.
+
+Optional companion interface `ISupportedDataKeys(bytes32 node) → bytes32[]` lets a resolver declare which keys it serves — useful for clients that want to enumerate available data keys for a name.
+
 ## Chain-Registry Resolver (`<chain>.on.eth`)
 
 **Spec/docs**: [docs.ens.domains/resolvers/chain-registry-resolver](https://docs.ens.domains/resolvers/chain-registry-resolver).
@@ -151,12 +182,14 @@ See [normalization.md](normalization.md) for the full picture.
 ## Footguns
 
 1. **Hashing an unnormalized label.** You'll write to a node nobody can resolve.
-2. **Splitting a name to normalize each label.** Bidi/ZWJ rules are cross-label.
-3. **Onchain subnames at scale.** Gas cost compounds; if you need 1000+, build CCIP-Read.
-4. **Treating offchain subnames as queryable in the subgraph.** They aren't; they only exist at resolution time.
-5. **Storing a URL in `contenthash`.** That's the wrong record. `contenthash` is binary-tagged; `url` is the text record for HTTP.
-6. **ABI lookups assuming type=1 (JSON).** Real resolvers may only have CBOR or zlib-JSON. Pass a bitfield of all you can decode.
-7. **Burning the parent resolver while subnames depend on it.** All onchain subname records become unreachable.
+2. **Confusing `namehash` and `labelhash`.** See the [callout above](#namehash-vs-labelhash--dont-conflate-them).
+3. **Splitting a name to normalize each label.** Bidi/ZWJ rules are cross-label.
+4. **Onchain subnames at scale.** Gas cost compounds; if you need 1000+, build CCIP-Read.
+5. **Treating offchain subnames as queryable in the subgraph.** They aren't; they only exist at resolution time.
+6. **Storing a URL in `contenthash`.** That's the wrong record. `contenthash` is binary-tagged; `url` is the text record for HTTP.
+7. **ABI lookups assuming type=1 (JSON).** Real resolvers may only have CBOR or zlib-JSON. Pass a bitfield of all you can decode.
+8. **Using `data(node, key)` for things text records cover.** Less interop, less indexing.
+9. **Burning the parent resolver while subnames depend on it.** All onchain subname records become unreachable.
 
 ## Sources
 
@@ -165,6 +198,7 @@ See [normalization.md](normalization.md) for the full picture.
 - [ENSIP-6 — DNS-in-ENS](https://docs.ens.domains/ensip/6)
 - [ENSIP-7 — Content Hash](https://docs.ens.domains/ensip/7)
 - [ENSIP-10 — Wildcard Resolution](https://docs.ens.domains/ensip/10)
+- [ENSIP-24 — Arbitrary Data Resolver](https://docs.ens.domains/ensip/24)
 - [docs.ens.domains/learn/dns](https://docs.ens.domains/learn/dns)
 - [docs.ens.domains/resolvers/chain-registry-resolver](https://docs.ens.domains/resolvers/chain-registry-resolver)
 - [docs.ens.domains/resolvers/ccip-read](https://docs.ens.domains/resolvers/ccip-read)
