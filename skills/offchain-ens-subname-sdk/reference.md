@@ -133,6 +133,8 @@ enum ChainName {
   Sui = "sui",
   Aptos = "aptos",
   Algorand = "algorand",
+  Polkadot = "dot",
+  Vara = "vara",
 }
 ```
 
