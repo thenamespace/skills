@@ -56,3 +56,5 @@ try {
 **Missing API key**: Throws `Error` (not `AuthenticationError`) with message including "Api key is not present for name". Call `setDefaultApiKey()` or `setApiKey()` before operations.
 
 **Subname not found on `getSingleSubname`**: Returns `null` instead of throwing. Other methods that operate on existing subnames (update, add/delete records) will throw if the subname doesn't exist.
+
+**Invalid address for chain**: `validateAddress(addr, ChainName.X)` throws `ValidationError` when the format doesn't match — wrong prefix, length, or charset. For SS58 chains, this includes wrong leading characters (Polkadot expects `1...`, Vara expects `kG...`) and wrong length.

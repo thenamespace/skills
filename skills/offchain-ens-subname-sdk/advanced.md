@@ -140,6 +140,8 @@ validateEnsName('example.eth');                       // ✅
 validateEnsName('mysite.com');                        // ✅ imported domains
 validateSubname('alice.example.eth');                 // ✅
 validateAddress('0x...', ChainName.Ethereum);         // ✅
+validateAddress('15oF...Sp5', ChainName.Polkadot);    // ✅ SS58 prefix 0
+validateAddress('kGkL...otW', ChainName.Vara);        // ✅ SS58 prefix 137
 validateApiKey('ns-abc-123...');                      // ✅
 ```
 
@@ -156,6 +158,8 @@ Supported address formats:
 | NEAR                | 64 hex chars (implicit) or `*.near` (named)     |
 | Sui / Aptos / Stark | `0x` + 1-64 hex characters                      |
 | Algorand            | Base32, 58 characters                           |
+| Polkadot            | SS58, prefix 0 — 47-48 chars starting with `1`  |
+| Vara                | SS58, prefix 137 — 49 chars starting with `kG`  |
 
 ## ENS Client Compatibility
 
