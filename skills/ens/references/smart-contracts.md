@@ -2,7 +2,7 @@
 
 Naming a deployed contract, the key contract addresses you'll touch, EIP-165 interface checks, and using ENS as protocol infrastructure (service discovery, upgradeability pointers, registry of official extensions).
 
-For querying ENS data at scale (subgraph, indexers), see [subgraph.md](subgraph.md). For the Universal Resolver in depth, see [resolution.md → Universal Resolver](resolution.md#the-universal-resolver). For ENSIP-24 arbitrary data records, see [records-and-subnames.md](records-and-subnames.md#arbitrary-bytes-records-ensip-24).
+For querying ENS data at scale (subgraph, indexers), see [subgraph.md](subgraph.md). For the Universal Resolver in depth, see [resolution.md → Universal Resolver](resolution.md#the-universal-resolver). For ENSIP-24 arbitrary data records, see [records.md](records.md#arbitrary-bytes-records-ensip-24).
 
 ## Contents
 
@@ -67,7 +67,7 @@ After deployment, `claimant` can call the Reverse Registrar to set the name.
 
 ### Verify after deployment
 
-Reverse-resolve the contract's address and confirm the name forwards back to it. Same forward-verification rule as for users (see [profile.md → Reverse resolution](profile.md#reverse-resolution)). For multichain contracts, use the L2's Reverse Registrar — the mainnet one won't set an L2 primary name.
+Reverse-resolve the contract's address and confirm the name forwards back to it. Same forward-verification rule as for users (see [records.md → Reverse resolution](records.md#reverse-resolution)). For multichain contracts, use the L2's Reverse Registrar — the mainnet one won't set an L2 primary name.
 
 ### Why bother
 
@@ -158,10 +158,10 @@ Users and tools can enumerate official extensions by walking the subname space (
 
 ### Storing protocol metadata
 
-Use [text records (ENSIP-5)](records-and-subnames.md) on a protocol's name to publish:
+Use [text records (ENSIP-5)](records.md#text-records--overview) on a protocol's name to publish:
 - Human-readable docs URL (`url`).
 - Contact / support handles (`com.twitter`, `org.telegram`).
-- ABI for the main contract (ENSIP-4 — see [records-and-subnames.md](records-and-subnames.md#abi-text-record-ensip-4)).
+- ABI for the main contract (ENSIP-4 — see [records.md](records.md#abi-text-record-ensip-4)).
 - Distributed-web docs site (`contenthash` → IPFS).
 
 This makes the protocol self-describing without a separate registry website.

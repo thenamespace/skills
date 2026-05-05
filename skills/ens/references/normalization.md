@@ -31,14 +31,14 @@ ens_normalize(s: string) -> string  // throws on invalid input
 
 At every input boundary:
 
-| Boundary | What to do |
-|---|---|
-| Search/lookup input from a user | `ens_normalize(input.trim())` before anything else |
-| Address-book or saved-contact entry | Normalize at save AND at compare |
-| Hashing / namehash computation | Always normalize labels first |
-| Comparing two names for equality | Normalize both, then `===` |
-| Storing a name in your DB | Store the normalized form; display the beautified form (see below) |
-| Receiving a name over an API | Treat it as untrusted input; normalize on receipt |
+| Boundary                            | What to do                                                         |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| Search/lookup input from a user     | `ens_normalize(input.trim())` before anything else                 |
+| Address-book or saved-contact entry | Normalize at save AND at compare                                   |
+| Hashing / namehash computation      | Always normalize labels first                                      |
+| Comparing two names for equality    | Normalize both, then `===`                                         |
+| Storing a name in your DB           | Store the normalized form; display the beautified form (see below) |
+| Receiving a name over an API        | Treat it as untrusted input; normalize on receipt                  |
 
 ## Normalize vs beautify (storage vs display)
 
@@ -50,13 +50,14 @@ At every input boundary:
 Storing the normalized form keeps your hashes consistent with onchain state. Displaying the beautified form gives users the colored/full emoji they expect.
 
 ```ts
-import { ens_normalize, ens_beautify } from '@adraffy/ens-normalize'
+import { ens_normalize, ens_beautify } from "@adraffy/ens-normalize";
 
-const stored = ens_normalize('❤️.eth')   // '❤.eth'  → for hash/lookup
-const shown  = ens_beautify(stored)       // '❤️.eth' → for UI
+const stored = ens_normalize("❤️.eth"); // '❤.eth'  → for hash/lookup
+const shown = ens_beautify(stored); // '❤️.eth' → for UI
 ```
 
 Other useful exports:
+
 - **`ens_split(name)`** — array of normalized labels.
 - **`ens_tokenize(label)`** — low-level tokenization, useful for debugging "why does this fail?".
 
@@ -75,6 +76,7 @@ Using the library wrapper guarantees you stay in sync if the spec or vendored da
 ## Right vs wrong patterns
 
 **Wrong**:
+
 ```ts
 // 1. Lowercase is not normalization
 const node = namehash(input.toLowerCase())
@@ -93,6 +95,7 @@ try { return normalize(name) } catch { return name }   // accepts invalid names
 ```
 
 **Right**:
+
 ```ts
 import { normalize } from 'viem/ens'
 
@@ -116,9 +119,9 @@ try {
 1. **`toLowerCase()` anywhere on an ENS name.** It's not normalization.
 2. **Comparing a user's input to a stored name without normalizing both.** Easy false-negatives.
 3. **Treating subnames label-by-label.** Bidi rules and emoji ZWJ sequences are evaluated across the full name; piecewise normalization can silently change semantics.
-4. **Catching the normalize-throw.** If normalization rejects a name, it is *not* a valid ENS name. Don't silently accept it.
+4. **Catching the normalize-throw.** If normalization rejects a name, it is _not_ a valid ENS name. Don't silently accept it.
 5. **Server/client mismatch.** If your server rejects names that the client accepts (or vice versa), you have a bypass. Normalize on both sides with the same library.
-6. **Confusing "passes normalization" with "visually safe."** A normalized name is *cryptographically* canonical, not visually unambiguous — bidi names and mixed-script labels can still mislead users. See [UI-side defenses](#ui-side-defenses-against-visually-confusable-names) below.
+6. **Confusing "passes normalization" with "visually safe."** A normalized name is _cryptographically_ canonical, not visually unambiguous — bidi names and mixed-script labels can still mislead users. See [UI-side defenses](#ui-side-defenses-against-visually-confusable-names) below.
 
 ## UI-side defenses against visually-confusable names
 
@@ -135,7 +138,7 @@ These are UX measures, not protocol measures — they don't replace normalizatio
 
 ## Namehash and `labelhash` — don't conflate them
 
-A subtle related bug: `namehash` is the recursive node identifier for a full name; `labelhash` (just `keccak256(label)`) is the per-label hash used inside the namehash construction. They are not interchangeable, and mixing them silently produces "name not found" results. Always normalize before either. See [records-and-subnames.md → Namehash mechanics](records-and-subnames.md#namehash-mechanics) for the algorithm and the trap.
+`namehash` is the recursive node identifier for a full name; `labelhash` (just `keccak256(label)`) is the per-label hash used inside the namehash construction. They are not interchangeable, and mixing them silently produces "name not found" results. Always normalize before either. See [records.md → Namehash mechanics](records.md#namehash-mechanics) for the algorithm and the trap.
 
 ## Sources
 

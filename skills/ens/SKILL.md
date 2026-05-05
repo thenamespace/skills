@@ -10,7 +10,7 @@ This skill guides ENS integration work. It covers two modes:
 - **Greenfield** — adding ENS to an app for the first time.
 - **Audit** — checking an existing integration is correct against current ENS best practices (ENSv2-ready, normalization, multichain, L2 primary, CCIP-Read).
 
-Most apps (~99%) only need [Scenario 1](#scenario-1--the-99-case-display-resolve-profile). Bigger ENS surface areas (custom records, subnames, contract naming, library implementation) live in `references/`.
+Most apps (~99%) only need [Scenario 1](#scenario-1--the-99-case-display-resolve-profile). Bigger surface areas — custom records, subnames, contract naming, querying at scale, library implementation, AI-agent identity — are organized as scenarios below and detailed in `references/`.
 
 ## Scope and source of truth
 
@@ -23,7 +23,7 @@ Most apps (~99%) only need [Scenario 1](#scenario-1--the-99-case-display-resolve
 These show up in every scenario. If a single one is missing, the integration is wrong even if it appears to work.
 
 1. **Normalize at every input boundary** with `@adraffy/ens-normalize` (or your library's wrapper). Never `toLowerCase()` an ENS name. Normalization is what prevents homoglyph attacks (`аpple.eth` with a Cyrillic `а`) and ensures `Vitalik.eth` and `vitalik.eth` hash to the same node. Apply it to: search inputs, address-book entries, anything before hashing/comparing/sending. See [references/normalization.md](references/normalization.md).
-2. **Forward-verify after every reverse resolution.** Anyone can set their reverse record to claim *any* name. The only thing that proves a name actually belongs to an address is forward-resolving the claimed name and checking it points back. viem/wagmi do this by default; ethers v6 historically did not — verify your library's behavior or add the second resolution yourself. See [references/profile.md](references/profile.md).
+2. **Forward-verify after every reverse resolution.** Anyone can set their reverse record to claim *any* name. The only thing that proves a name actually belongs to an address is forward-resolving the claimed name and checking it points back. viem/wagmi do this by default; ethers v6 historically did not — verify your library's behavior or add the second resolution yourself. See [references/records.md](references/records.md).
 3. **For value-bearing transactions, resolve fresh against an L1 RPC** — not via a cached value, an indexer, the subgraph, or a third-party API. Cached and indexed data is eventually consistent; an updated `addr` record may not propagate for minutes. The user is signing for the *address*, so the address must be the live one at signing time. Run your own node for high-value flows, or use an audited L1 RPC provider. See [references/resolution.md](references/resolution.md).
 4. **Don't hardcode contract addresses.** Registry, Universal Resolver, and Reverse Registrar addresses change across upgrades and per-chain deployments. Use the addresses your library ships with, or look up [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) at integration time. Universal Resolver in particular has multiple deployed versions during the ENSv2 transition. See [references/ensv2-readiness.md](references/ensv2-readiness.md).
 5. **Don't gate on `.eth` suffix.** ENS supports DNS-imported names (`.com`, `.xyz`, `.box`) and other TLDs. If you need to detect "is this an ENS name?", check for a `.` in a normalized string and try to resolve it — don't string-match TLDs.
@@ -69,7 +69,7 @@ function AddressDisplay({ address }: { address: `0x${string}` }) {
 ```
 
 Notes:
-- `chainId: 1` is correct *even on L2 dapps* — ENS records live on mainnet (with L2 primary names being a separate flow; see [references/profile.md](references/profile.md)).
+- `chainId: 1` is correct *even on L2 dapps* — ENS records live on mainnet (with L2 primary names being a separate flow; see [references/records.md](references/records.md)).
 - `normalize()` before `useEnsAvatar` is the boundary requirement. wagmi v2 will throw if you pass an unnormalized name.
 - For batch leaderboards, don't call N hooks — query the Universal Resolver in a multicall. See [references/resolution.md](references/resolution.md#batch-resolution).
 
@@ -97,7 +97,7 @@ For multichain sends ("send to alice.eth on Base"), pass `coinType` — see [ref
 
 ### D. Show a profile
 
-The standard text records are defined by ENSIP-5 and ENSIP-18. Common ones: `avatar`, `description`, `url`, `com.twitter`, `com.github`, `org.telegram`, `email`, `location`, `header`. Full list and "how to render avatars correctly" in [references/profile.md](references/profile.md).
+The standard text records are defined by ENSIP-5 and ENSIP-18. Common ones: `avatar`, `description`, `url`, `com.twitter`, `com.github`, `org.telegram`, `email`, `location`, `header`. Full list and "how to render avatars correctly" in [references/records.md](references/records.md).
 
 ---
 
@@ -107,17 +107,17 @@ Run through this checklist. Each item maps to a section of the references. Flag 
 
 **Resolution & display**
 - [ ] All ENS name input is normalized with `@adraffy/ens-normalize` (or library wrapper) before hashing/storing/comparing. No `toLowerCase()`. ([normalization](references/normalization.md))
-- [ ] `namehash` is computed from a normalized name, never raw input; `namehash` is not confused with `labelhash`. ([records-and-subnames](references/records-and-subnames.md#namehash-mechanics))
-- [ ] Reverse resolution (`address → name`) is forward-verified before being shown. ([profile](references/profile.md#reverse-resolution))
-- [ ] Address comparisons are case-insensitive (`.toLowerCase()` both sides) — checksum casing is informational. ([profile](references/profile.md#reverse-resolution))
+- [ ] `namehash` is computed from a normalized name, never raw input; `namehash` is not confused with `labelhash`. ([records](references/records.md#namehash-mechanics))
+- [ ] Reverse resolution (`address → name`) is forward-verified before being shown. ([profile](references/records.md#reverse-resolution))
+- [ ] Address comparisons are case-insensitive (`.toLowerCase()` both sides) — checksum casing is informational. ([profile](references/records.md#reverse-resolution))
 - [ ] App never compares pre-normalized names — `name1 === name2` only after normalize. ([normalization](references/normalization.md))
 - [ ] Value-bearing sends resolve fresh from an L1 RPC, not from cache, indexer, or subgraph. ([resolution](references/resolution.md))
-- [ ] Reverse records are queried on the chain where the user is *active* — not just mainnet. L2 primary names are honored. ([profile](references/profile.md#l2-primary-names))
+- [ ] Reverse records are queried on the chain where the user is *active* — not just mainnet. L2 primary names are honored. ([profile](references/records.md#l2-primary-names))
 - [ ] When sending to an ENS name on a non-Ethereum chain, the resolution requests the right `coinType` (ENSIP-9/-11). ([resolution](references/resolution.md#multichain-coin-types))
 
 **Avatars & profile**
-- [ ] Avatar rendering handles `https://`, `ipfs://`, `data:` and `eip155:` (NFT) URIs. Naive `<img src={textRecord}>` is a bug. ([profile](references/profile.md#avatars))
-- [ ] NFT avatars verify ownership before rendering (otherwise spoof risk). ([profile](references/profile.md#avatars))
+- [ ] Avatar rendering handles `https://`, `ipfs://`, `data:` and `eip155:` (NFT) URIs. Naive `<img src={textRecord}>` is a bug. ([profile](references/records.md#avatars))
+- [ ] NFT avatars verify ownership before rendering (otherwise spoof risk). ([profile](references/records.md#avatars))
 
 **Library & infra**
 - [ ] viem is **≥ 2.35** for ENSv2 readiness; ethers users have applied the ENS patch. ([ensv2-readiness](references/ensv2-readiness.md))
@@ -134,21 +134,27 @@ If any item misses, link the user to the matching reference and propose a concre
 
 ---
 
-## Decision tree — when to read which reference
+## Other scenarios
 
-```
-Question                                                              → File
-────────────────────────────────────────────────────────────────────────────────
-"How do I normalize? Why does my hash mismatch?"                      → references/normalization.md
-"How do I resolve? CCIP-Read? multichain? Universal Resolver? batch?" → references/resolution.md
-"Show profile? avatar? reverse? L2 primary?"                          → references/profile.md
-"Issue subnames? text records? content hash? DNS import? ABI? on.eth" → references/records-and-subnames.md
-"Name a smart contract? key addresses? ENS for service discovery?"    → references/smart-contracts.md
-"Query ENS at scale? leaderboards? historical data?"                  → references/subgraph.md
-"Is my app ENSv2-ready? what changed in v2?"                          → references/ensv2-readiness.md
-"Build an AI agent that uses ENS as identity? ENSIP-25/-26 + 8004?"   → references/agentic.md
-"I'm implementing ENS in a library — what does correct look like?"    → references/library-authors.md
-```
+Beyond Scenario 1, each of these is a distinct integration shape. Read the linked file when the user's task lands there; don't pre-load them.
+
+| # | Scenario | Read |
+|---|---|---|
+| 2 | **Custom records** — write/read text, contenthash, ABI, arbitrary bytes; namehash mechanics; chain-registry resolver (`<chain>.on.eth`). | [references/records.md](references/records.md) |
+| 3 | **Subnames** — issue names under a parent, onchain vs offchain (CCIP-Read wildcard), DNS-imported parents (ENSIP-6). | [references/subnames.md](references/subnames.md) |
+| 4 | **Smart contracts** — naming a deployed contract, key contract addresses, EIP-165 interface checks, ENS as service-discovery infrastructure. | [references/smart-contracts.md](references/smart-contracts.md) |
+| 5 | **Querying at scale** — subgraph for leaderboards / search / historical data, and the offchain-name limitation. | [references/subgraph.md](references/subgraph.md) |
+| 6 | **ENSv2 readiness** — what changed, library version matrix, migration checklist. | [references/ensv2-readiness.md](references/ensv2-readiness.md) |
+| 7 | **AI agents** — agent owns an ENS identity; ENSIP-26 discovery, ENSIP-25 verification, brief on ERC-8004. | [references/agentic.md](references/agentic.md) |
+| 8 | **Library authors** — implementing ENS in a client library (the next viem/ethers, a Go/Rust/Swift port). | [references/library-authors.md](references/library-authors.md) |
+
+Foundational references — read whenever the relevant correctness rule applies, regardless of scenario:
+
+| Topic | Read |
+|---|---|
+| Normalization (ENSIP-15) | [references/normalization.md](references/normalization.md) |
+| Resolution (Universal Resolver, CCIP-Read, multichain, batch) | [references/resolution.md](references/resolution.md) |
+| Profile display (text keys, avatars, reverse, L2 primary) | [references/records.md](references/records.md) |
 
 ---
 

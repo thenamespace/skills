@@ -42,7 +42,7 @@ name "alice.eth"
 
 Resolution **always starts on Ethereum mainnet**, even if the dapp is on an L2. The registry, parent records, and most resolvers live on mainnet. Set `chainId: 1` for ENS calls regardless of your dapp's "active" chain.
 
-L2 *primary names* (`address → name` on an L2) are a separate flow — see [profile.md](profile.md#l2-primary-names).
+L2 *primary names* (`address → name` on an L2) are a separate flow — see [records.md](records.md#l2-primary-names).
 
 ## The Universal Resolver
 

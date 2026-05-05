@@ -20,7 +20,7 @@ What changed in ENSv2, what your app needs to do (or stop doing) to be compatibl
 ENSv2 is the protocol's evolution toward L2-native names, gasless registrations, and unified cross-chain resolution. The changes that matter to integrators:
 
 - **Universal Resolver as the canonical entry point** — instead of querying the registry directly to find a resolver and then calling it, all reads route through the Universal Resolver, which transparently handles wildcard fallback, CCIP-Read, and reverse-then-forward verification. See [resolution.md → Universal Resolver](resolution.md#the-universal-resolver).
-- **Per-chain registries and reverse registrars** — L2s have their own deployments. Names can live primarily on an L2; a user can have different primary names per chain. See [profile.md → L2 primary names](profile.md#l2-primary-names).
+- **Per-chain registries and reverse registrars** — L2s have their own deployments. Names can live primarily on an L2; a user can have different primary names per chain. See [records.md → L2 primary names](records.md#l2-primary-names).
 - **Wildcard / synthesized subnames** are first-class — large offchain spaces (`*.cb.id`, `*.uni.eth`, `*.linea.eth`) resolve through the same surface as onchain names.
 - **DNS-imported names and alternative TLDs** are mainstream — `.eth` is no longer the only suffix worth handling.
 
@@ -43,7 +43,7 @@ Each of these is a v1-era pattern that v2 silently breaks:
 - **Manually calling `registry.resolver(node) → resolver.addr(node)`.** Skips wildcard resolution and CCIP-Read. Returns null for any offchain or wildcard name.
 - **Gating on `.eth` suffix** to detect "is this an ENS name?" Use a normalized-string-with-a-dot check and try to resolve it. See [Rule 5 in SKILL.md](../SKILL.md#the-five-rules-that-apply-to-every-ens-integration).
 - **Disabling CCIP-Read** (`ccipRead: false` in viem, omitting EIP-3668 handling in custom code). Silently breaks Coinbase / Linea / Uniswap / Base offchain names — a sizable chunk of mainstream ENS.
-- **Querying mainnet `addr.reverse` only** for primary names. L2 primary names live on per-chain reverse registrars. See [profile.md → L2 primary names](profile.md#l2-primary-names).
+- **Querying mainnet `addr.reverse` only** for primary names. L2 primary names live on per-chain reverse registrars. See [records.md → L2 primary names](records.md#l2-primary-names).
 - **Hardcoding the Universal Resolver address**. Multiple versions exist during the transition; per-chain addresses differ. Use [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) at integration time.
 
 ## What to start using
