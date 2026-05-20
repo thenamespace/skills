@@ -30,11 +30,33 @@ ENSv2 doesn't break v1 names; it adds capability and shifts the canonical access
 
 | Library | What "v2-ready" means | How to verify |
 |---|---|---|
-| **viem** | Version **≥ 2.35.0**. ENSv2 routing through the Universal Resolver and CCIP-Read are on by default. | `cat package.json \| grep viem` and check `viem.sh` for the changelog of your version. |
+| **viem** | Version **≥ 2.35.0**. ENSv2 routing through the Universal Resolver and CCIP-Read are on by default. | `npm ls viem`, then run the [canonical test vectors](#canonical-test-vectors) below. |
 | **wagmi** | Latest v2.x — built on viem, inherits its v2 readiness. Make sure your wagmi pulls a viem ≥ 2.35. | `pnpm why viem` (or `npm ls viem`) to see the resolved version. |
-| **ethers** | **v6 with the ENS readiness patch applied.** v5 is not v2-ready. | Check ENS docs for the current ethers ENS package; install and verify resolution against a known offchain name. |
+| **ethers** | **v6 with the ENS readiness patch applied.** Native support lands in **v6.16.0**; until then apply the interim ENS ethers patch. v5 is not v2-ready. | Run the [canonical test vectors](#canonical-test-vectors) below. |
 | **web3.js** | Deprecated for ENS. Migrate to viem or ethers v6. | n/a |
-| **Other languages** (Go, Rust, Python, Swift, etc.) | Use a library that targets the Universal Resolver and implements EIP-3668 CCIP-Read. If yours doesn't, route through an RPC that does, or implement against the Universal Resolver directly. | Try resolving a known CCIP-Read name like `1.offchainexample.eth`; if it returns null, your stack isn't v2-ready. |
+| **Other languages** (Go, Rust, Python, Swift, etc.) | Use a library that targets the Universal Resolver and implements EIP-3668 CCIP-Read. If yours doesn't, route through an RPC that does, or implement against the Universal Resolver directly. | Run the [canonical test vectors](#canonical-test-vectors) below; if either returns null or the wrong address, your stack isn't v2-ready. |
+
+## Canonical test vectors
+
+The official readiness page is built around two concrete pass/fail checks. Run both against your stack — they're the fastest unambiguous signal:
+
+| What it proves | Resolve | Expect | Failure signal |
+|---|---|---|---|
+| **Universal Resolver** is the v2 contract | `ur.integration-tests.eth` | `0x2222222222222222222222222222222222222222` | `0x1111…1111` → your library/UR address is pre-v2; update it |
+| **CCIP-Read** path works end to end | `test.offchaindemo.eth` | `0x779981590E7Ccc0CFAe8040Ce7151324747cDb97` | `null` / revert → CCIP-Read disabled or unsupported |
+
+Wire both into an integration test so a future dependency bump can't silently regress them.
+
+### Multichain example
+
+The canonical illustration of "always pass `coinType` for the chain you're acting on" is `test.ses.eth`, which resolves to *different* addresses per chain:
+
+| Chain | Address |
+|---|---|
+| Ethereum Mainnet | `0x2B0F09F23193de2Fb66258a10886B9f06903276c` |
+| Base | `0x7d3a48269416507E6d207a9449E7800971823Ffa` |
+
+Omitting `coinType` returns the Mainnet address by default — which is **not** guaranteed to be the user's address on Base or any other L2. Always request the address for the chain you're about to transact on, even when that chain is Mainnet.
 
 ## What to stop doing
 
@@ -66,7 +88,7 @@ Run through this on any existing app to confirm v2 readiness:
 - [ ] Reverse resolution targets the chain the user is active on (not just mainnet), with mainnet as fallback.
 - [ ] Multichain sends pass the right `coinType` (ENSIP-9/-11 — `chainId | 0x80000000` for EVM L2s).
 - [ ] Avatars are resolved through the library (handles `eip155:` NFT URIs with ownership verification, not raw `<img src>`).
-- [ ] The integration resolves a known offchain name correctly — e.g., a `*.cb.id` name. Add an integration test for this.
+- [ ] Both [canonical test vectors](#canonical-test-vectors) pass: `ur.integration-tests.eth` → `0x2222…2222` and `test.offchaindemo.eth` → `0x779981590E7Ccc0CFAe8040Ce7151324747cDb97`. Add integration tests for both.
 
 If any item misses, see [SKILL.md → Audit mode](../SKILL.md#audit-mode--is-my-existing-ens-integration-correct) for the broader audit walk-through.
 
@@ -75,7 +97,7 @@ If any item misses, see [SKILL.md → Audit mode](../SKILL.md#audit-mode--is-my-
 If you're upgrading from a v1-era integration:
 
 - **Bumping viem to ≥ 2.35 is the single biggest win** — most v2 capability comes for free.
-- **Test against offchain names** before declaring done. `*.cb.id`, `*.uni.eth`, and `*.linea.eth` are good integration-test targets — if any of them return null when they should resolve, your CCIP-Read path is broken.
+- **Run the [canonical test vectors](#canonical-test-vectors)** before declaring done. For broader coverage also try `*.cb.id`, `*.uni.eth`, and `*.linea.eth` — null where a name should resolve means a broken CCIP-Read path.
 - **Decide your L2 primary policy** explicitly: are you showing the chain-specific primary on L2 dapps, or always falling back to mainnet? Document and apply consistently.
 - **Audit your `.eth` string-matches** with a global search. Most apps have at least one (`if (name.endsWith('.eth'))`); they all need to go.
 - **Don't try to be exhaustive about offchain spaces.** New ones launch regularly; the right pattern is "let the Universal Resolver handle it" rather than "maintain a list of supported wildcard parents."
@@ -85,6 +107,8 @@ If you're upgrading from a v1-era integration:
 - [docs.ens.domains/web/ensv2-readiness](https://docs.ens.domains/web/ensv2-readiness) — authoritative
 - [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) — live contract addresses
 - [docs.ens.domains/resolvers/universal](https://docs.ens.domains/resolvers/universal)
+- [docs.ens.domains/resolvers/ccip-read](https://docs.ens.domains/resolvers/ccip-read)
+- [docs.ens.domains/learn/dns](https://docs.ens.domains/learn/dns) — DNS-imported names
 - [EIP-3668 — CCIP-Read](https://eips.ethereum.org/EIPS/eip-3668)
 - [ENSIP-10 — Wildcard Resolution](https://docs.ens.domains/ensip/10)
 - [ENSIP-19 — L2 Reverse Resolution](https://docs.ens.domains/ensip/19)
