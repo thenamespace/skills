@@ -4,6 +4,14 @@ Skills for integrating [Namespace](https://namespace.ninja) or ENS in your appli
 
 ## Skills
 
+### `skills/ens`
+
+Vendor-neutral guide to the ENS protocol for app developers, auditors, and AI-agent builders. Covers normalization (ENSIP-15), forward + reverse resolution, CCIP-Read, multichain coin types, L2 primary names (ENSIP-19), records (text, avatar, contenthash, ABI, arbitrary bytes), subnames across three paths (mainnet onchain / L2 onchain custom resolver / offchain CCIP-Read) with use cases, smart-contract naming, subgraph queries, ENSv2 readiness, and AI-agent identity (ENSIP-25 / ENSIP-26 / ERC-8004).
+
+- **Auth**: None required
+- **Setup**: Library of choice (viem ≥ 2.35 + wagmi recommended; ethers v6 supported)
+- **Entry point**: [`skills/ens/SKILL.md`](skills/ens/SKILL.md)
+
 ### `skills/offchain-ens-subname-sdk`
 
 Create and manage gasless ENS subnames off-chain using the `@thenamespace/offchain-manager` SDK. Supports `.eth` domains, imported web2 domains, and alternative TLDs.
@@ -38,12 +46,13 @@ React UI kit for ENS and Namespace flows. Covers ENS name registration, record e
 
 ## Which skill should I use?
 
-| Scenario                                                          | Skill                      |
-| ----------------------------------------------------------------- | -------------------------- |
-| I want gasless, off-chain subnames for my app's users             | `offchain-ens-subname-sdk` |
-| Your agent needs to register a `*.celo.eth` name on-chain         | `celonames`                |
-| I need ENS profile/reverse resolution over HTTP                   | `resolvio`                 |
-| I want React components for ENS registration, records, or subnames | `ens-components`           |
+| Scenario                                                                                      | Skill                      |
+| --------------------------------------------------------------------------------------------- | -------------------------- |
+| I'm integrating, debugging, or auditing ENS in my app (vendor-neutral protocol guide)         | `ens`                      |
+| I want gasless, off-chain subnames for my app's users                                         | `offchain-ens-subname-sdk` |
+| Your agent needs to register a `*.celo.eth` name on-chain                                     | `celonames`                |
+| I need ENS profile/reverse resolution over HTTP                                               | `resolvio`                 |
+| I want React components for ENS registration, records, or subnames                            | `ens-components`           |
 
 ## Installation
 
