@@ -1,106 +1,47 @@
 # ENSv2 Readiness
 
-What changed in ENSv2, what your app needs to do (or stop doing) to be compatible, and a checklist.
+What changed in ENSv2, what your app needs to do (or stop doing) to be compatible.
 
-**Authoritative source**: [docs.ens.domains/web/ensv2-readiness](https://docs.ens.domains/web/ensv2-readiness). Always cross-check against the live page — v2 is an active rollout.
+**Authoritative source**: [docs.ens.domains/web/ensv2-readiness](https://docs.ens.domains/web/ensv2-readiness). Always cross-check against the live page — v2 is an active rollout. Our headings differ from the official page: we organize by what an integrator does (verify / fix), not by mechanism.
 
-## Contents
+## What v2 shifts
 
-- [What v2 changes](#what-v2-changes)
-- [The library version matrix](#the-library-version-matrix)
-- [What to stop doing](#what-to-stop-doing)
-- [What to start using](#what-to-start-using)
-- [Readiness checklist](#readiness-checklist)
-- [Migration notes](#migration-notes)
+ENSv2 moves the canonical access pattern toward the Universal Resolver, per-chain registries and reverse registrars, first-class wildcard / CCIP-Read names, and mainstream DNS-imported / non-`.eth` names. **v1 names still work.** The risk isn't that v1 names break — it's that your code takes a v1-era fast path (string-match `.eth`, manual `registry.resolver()`, mainnet-only reverse) and silently misses v2-era names.
 
----
-
-## What v2 changes
-
-ENSv2 is the protocol's evolution toward L2-native names, gasless registrations, and unified cross-chain resolution. The changes that matter to integrators:
-
-- **Universal Resolver as the canonical entry point** — instead of querying the registry directly to find a resolver and then calling it, all reads route through the Universal Resolver, which transparently handles wildcard fallback, CCIP-Read, and reverse-then-forward verification. See [resolution.md → Universal Resolver](resolution.md#the-universal-resolver).
-- **Per-chain registries and reverse registrars** — L2s have their own deployments. Names can live primarily on an L2; a user can have different primary names per chain. See [records.md → L2 primary names](records.md#l2-primary-names).
-- **Wildcard / synthesized subnames** are first-class — large offchain spaces (`*.cb.id`, `*.uni.eth`, `*.linea.eth`) resolve through the same surface as onchain names.
-- **DNS-imported names and alternative TLDs** are mainstream — `.eth` is no longer the only suffix worth handling.
-
-ENSv2 doesn't break v1 names; it adds capability and shifts the canonical access pattern. The risk to your app isn't that v1 names stop working — it's that your code takes a v1-era fast path that silently misses v2-era names (offchain, L2-primary, non-`.eth`).
-
-## The library version matrix
+## Library matrix
 
 | Library | What "v2-ready" means | How to verify |
 |---|---|---|
-| **viem** | Version **≥ 2.35.0**. ENSv2 routing through the Universal Resolver and CCIP-Read are on by default. | `npm ls viem`, then run the [canonical test vectors](#canonical-test-vectors) below. |
-| **wagmi** | Latest v2.x — built on viem, inherits its v2 readiness. Make sure your wagmi pulls a viem ≥ 2.35. | `pnpm why viem` (or `npm ls viem`) to see the resolved version. |
-| **ethers** | **v6 with the ENS readiness patch applied.** Native support lands in **v6.16.0**; until then apply the interim ENS ethers patch. v5 is not v2-ready. | Run the [canonical test vectors](#canonical-test-vectors) below. |
-| **web3.js** | Deprecated for ENS. Migrate to viem or ethers v6. | n/a |
-| **Other languages** (Go, Rust, Python, Swift, etc.) | Use a library that targets the Universal Resolver and implements EIP-3668 CCIP-Read. If yours doesn't, route through an RPC that does, or implement against the Universal Resolver directly. | Run the [canonical test vectors](#canonical-test-vectors) below; if either returns null or the wrong address, your stack isn't v2-ready. |
+| **viem** | Version **≥ 2.35.0** — UR routing and CCIP-Read on by default. | `npm ls viem`, then run the [test vectors](#verify). |
+| **wagmi** | Latest v2.x — inherits viem's readiness. | `pnpm why viem` to confirm viem ≥ 2.35. |
+| **ethers** | Both v5 and v6 need the ENS patch — install [`@ensdomains/ethers-patch-v5`](https://github.com/ensdomains/ethers-patch) or `@ensdomains/ethers-patch-v6` and `import` it at app entry. Native v6 support lands in **v6.16.0**. | Run the [test vectors](#verify). |
+| **web3.js** | Deprecated for ENS — migrate. | n/a |
+| **Other languages** | Library must target UR and implement EIP-3668 CCIP-Read. Otherwise route through an RPC that does. | Run the [test vectors](#verify). |
 
-## Canonical test vectors
+## Verify
 
-The official readiness page is built around two concrete pass/fail checks. Run both against your stack — they're the fastest unambiguous signal:
+Two canonical pass/fail checks. Wire both into an integration test so a future dependency bump can't silently regress them.
 
 | What it proves | Resolve | Expect | Failure signal |
 |---|---|---|---|
-| **Universal Resolver** is the v2 contract | `ur.integration-tests.eth` | `0x2222222222222222222222222222222222222222` | `0x1111…1111` → your library/UR address is pre-v2; update it |
-| **CCIP-Read** path works end to end | `test.offchaindemo.eth` | `0x779981590E7Ccc0CFAe8040Ce7151324747cDb97` | `null` / revert → CCIP-Read disabled or unsupported |
+| **Universal Resolver** is v2 | `ur.integration-tests.eth` | `0x2222222222222222222222222222222222222222` | `0x1111…1111` → library/UR is pre-v2 |
+| **CCIP-Read** path works | `test.offchaindemo.eth` | `0x779981590E7Ccc0CFAe8040Ce7151324747cDb97` | `null` / revert → CCIP-Read disabled or unsupported |
 
-Wire both into an integration test so a future dependency bump can't silently regress them.
+**Multichain example.** `test.ses.eth` resolves to different addresses per chain — Ethereum Mainnet `0x2B0F09F23193de2Fb66258a10886B9f06903276c`, Base `0x7d3a48269416507E6d207a9449E7800971823Ffa`. Omitting `coinType` returns the Mainnet address by default, which isn't guaranteed to work on L2s. Always request the address for the chain you're about to transact on.
 
-### Multichain example
+## v1-era patterns to fix
 
-The canonical illustration of "always pass `coinType` for the chain you're acting on" is `test.ses.eth`, which resolves to *different* addresses per chain:
+Each row is one audit item. If you find the ❌ pattern in your codebase, replace it.
 
-| Chain | Address |
-|---|---|
-| Ethereum Mainnet | `0x2B0F09F23193de2Fb66258a10886B9f06903276c` |
-| Base | `0x7d3a48269416507E6d207a9449E7800971823Ffa` |
-
-Omitting `coinType` returns the Mainnet address by default — which is **not** guaranteed to be the user's address on Base or any other L2. Always request the address for the chain you're about to transact on, even when that chain is Mainnet.
-
-## What to stop doing
-
-Each of these is a v1-era pattern that v2 silently breaks:
-
-- **Manually calling `registry.resolver(node) → resolver.addr(node)`.** Skips wildcard resolution and CCIP-Read. Returns null for any offchain or wildcard name.
-- **Gating on `.eth` suffix** to detect "is this an ENS name?" Use a normalized-string-with-a-dot check and try to resolve it. See [Rule 5 in SKILL.md](../SKILL.md#the-five-rules-that-apply-to-every-ens-integration).
-- **Disabling CCIP-Read** (`ccipRead: false` in viem, omitting EIP-3668 handling in custom code). Silently breaks Coinbase / Linea / Uniswap / Base offchain names — a sizable chunk of mainstream ENS.
-- **Querying mainnet `addr.reverse` only** for primary names. L2 primary names live on per-chain reverse registrars. See [records.md → L2 primary names](records.md#l2-primary-names).
-- **Hardcoding the Universal Resolver address**. Multiple versions exist during the transition; per-chain addresses differ. Use [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) at integration time.
-
-## What to start using
-
-- **Universal Resolver** for every read — let your library route there.
-- **Per-chain `chainId`** when calling `getEnsName` / `getEnsAddress` / `getEnsAvatar` / `getEnsText` for L2-active users.
-- **Multichain `coinType`** when sending on a chain other than Ethereum mainnet (ENSIP-9/-11). See [resolution.md → Multichain coin types](resolution.md#multichain-coin-types).
-- **`@adraffy/ens-normalize`** (or your library's wrapper) — normalize *every* user-input name. See [normalization.md](normalization.md).
-- **EIP-165 `supportsInterface()`** before calling optional resolver methods on arbitrary resolvers. See [smart-contracts.md → Verify resolver interface support](smart-contracts.md#verify-resolver-interface-support-eip-165).
-
-## Readiness checklist
-
-Run through this on any existing app to confirm v2 readiness:
-
-- [ ] Library is at the v2-ready version (viem ≥ 2.35, ethers v6 with patch, etc.).
-- [ ] CCIP-Read is enabled (default in viem ≥ 2.35; explicit in older or custom clients).
-- [ ] All reads route through the library's high-level actions (`getEnsName`, `getEnsAddress`, etc.) — no manual `registry.resolver()` calls.
-- [ ] No hardcoded ENS contract addresses anywhere in the codebase.
-- [ ] Detection of "is this a name?" doesn't string-match `.eth` — supports DNS-imported names and alternative TLDs.
-- [ ] Reverse resolution targets the chain the user is active on (not just mainnet), with mainnet as fallback.
-- [ ] Multichain sends pass the right `coinType` (ENSIP-9/-11 — `chainId | 0x80000000` for EVM L2s).
-- [ ] Avatars are resolved through the library (handles `eip155:` NFT URIs with ownership verification, not raw `<img src>`).
-- [ ] Both [canonical test vectors](#canonical-test-vectors) pass: `ur.integration-tests.eth` → `0x2222…2222` and `test.offchaindemo.eth` → `0x779981590E7Ccc0CFAe8040Ce7151324747cDb97`. Add integration tests for both.
-
-If any item misses, see [SKILL.md → Audit mode](../SKILL.md#audit-mode--is-my-existing-ens-integration-correct) for the broader audit walk-through.
-
-## Migration notes
-
-If you're upgrading from a v1-era integration:
-
-- **Bumping viem to ≥ 2.35 is the single biggest win** — most v2 capability comes for free.
-- **Run the [canonical test vectors](#canonical-test-vectors)** before declaring done. For broader coverage also try `*.cb.id`, `*.uni.eth`, and `*.linea.eth` — null where a name should resolve means a broken CCIP-Read path.
-- **Decide your L2 primary policy** explicitly: are you showing the chain-specific primary on L2 dapps, or always falling back to mainnet? Document and apply consistently.
-- **Audit your `.eth` string-matches** with a global search. Most apps have at least one (`if (name.endsWith('.eth'))`); they all need to go.
-- **Don't try to be exhaustive about offchain spaces.** New ones launch regularly; the right pattern is "let the Universal Resolver handle it" rather than "maintain a list of supported wildcard parents."
+| ❌ Pattern | ✅ Replacement | Why it matters |
+|---|---|---|
+| `name.endsWith('.eth')` to detect "is this an ENS name?" | Normalize, check for a `.`, try to resolve. See [SKILL.md Rule 5](../SKILL.md#the-five-rules-that-apply-to-every-ens-integration). | Excludes DNS-imported names (`.com`, `.xyz`, `.box`), alt TLDs, emoji names — a growing share of mainstream ENS. |
+| Manual `registry.resolver(node) → resolver.addr(node)` | Library high-level actions (`getEnsAddress`, `getEnsName`, etc.) routed through the Universal Resolver. | Skips wildcard resolution and CCIP-Read. Returns `null` for offchain and wildcard names. |
+| `ccipRead: false` (or omitting EIP-3668 handling in custom code) | Default-on (viem ≥ 2.35); explicit in custom clients. | Silently breaks Coinbase / Linea / Uniswap / Base offchain names. |
+| Mainnet `addr.reverse` only for primary names | Per-chain reverse registrars (ENSIP-19). See [records.md → L2 primary names](records.md#l2-primary-names). | Misses users whose primary lives on an L2. |
+| Hardcoded Universal Resolver address | Read from [learn/deployments](https://docs.ens.domains/learn/deployments) at integration time. | Multiple UR versions during the transition; addresses differ per chain. |
+| Omitting `coinType` on non-Mainnet sends | Pass `chainId \| 0x80000000` (ENSIP-9/-11). See [resolution.md → Multichain coin types](resolution.md#multichain-coin-types). | Defaults to Mainnet address, not guaranteed valid on L2. |
+| Raw `<img src={avatarTextRecord}>` | Library avatar action (handles `eip155:` NFT URIs with ownership verification). | Naive rendering misses NFT avatars and skips ownership checks. |
 
 ## Sources
 
