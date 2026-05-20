@@ -2,11 +2,11 @@
 
 What changed in ENSv2, what your app needs to do (or stop doing) to be compatible.
 
-**Authoritative source**: [docs.ens.domains/web/ensv2-readiness](https://docs.ens.domains/web/ensv2-readiness). Always cross-check against the live page — v2 is an active rollout. Our headings differ from the official page: we organize by what an integrator does (verify / fix), not by mechanism.
+**Authoritative source**: [docs.ens.domains/web/ensv2-readiness](https://docs.ens.domains/web/ensv2-readiness). Always cross-check against the live page — v2 is an active rollout.
 
 ## What v2 shifts
 
-ENSv2 moves the canonical access pattern toward the Universal Resolver, per-chain registries and reverse registrars, first-class wildcard / CCIP-Read names, and mainstream DNS-imported / non-`.eth` names. **v1 names still work.** The risk isn't that v1 names break — it's that your code takes a v1-era fast path (string-match `.eth`, manual `registry.resolver()`, mainnet-only reverse) and silently misses v2-era names.
+**v1 names still work.** The risk is v1-era fast paths that silently miss v2-era names (offchain, L2-primary, non-`.eth`). Update your library first — most apps need nothing else.
 
 ## Library matrix
 
@@ -27,11 +27,10 @@ Two canonical pass/fail checks. Wire both into an integration test so a future d
 | **Universal Resolver** is v2 | `ur.integration-tests.eth` | `0x2222222222222222222222222222222222222222` | `0x1111…1111` → library/UR is pre-v2 |
 | **CCIP-Read** path works | `test.offchaindemo.eth` | `0x779981590E7Ccc0CFAe8040Ce7151324747cDb97` | `null` / revert → CCIP-Read disabled or unsupported |
 
-**Multichain example.** `test.ses.eth` resolves to different addresses per chain — Ethereum Mainnet `0x2B0F09F23193de2Fb66258a10886B9f06903276c`, Base `0x7d3a48269416507E6d207a9449E7800971823Ffa`. Omitting `coinType` returns the Mainnet address by default, which isn't guaranteed to work on L2s. Always request the address for the chain you're about to transact on.
+**Multichain example.** `test.ses.eth` resolves to different addresses per chain — Ethereum Mainnet `0x2B0F09F23193de2Fb66258a10886B9f06903276c`, Base `0x7d3a48269416507E6d207a9449E7800971823Ffa`. Omitting `coinType` returns the Mainnet address by default, which isn't guaranteed to work on L2s.
 
 ## v1-era patterns to fix
 
-Each row is one audit item. If you find the ❌ pattern in your codebase, replace it.
 
 | ❌ Pattern | ✅ Replacement | Why it matters |
 |---|---|---|
@@ -47,9 +46,6 @@ Each row is one audit item. If you find the ❌ pattern in your codebase, replac
 
 - [docs.ens.domains/web/ensv2-readiness](https://docs.ens.domains/web/ensv2-readiness) — authoritative
 - [docs.ens.domains/learn/deployments](https://docs.ens.domains/learn/deployments) — live contract addresses
-- [docs.ens.domains/resolvers/universal](https://docs.ens.domains/resolvers/universal)
-- [docs.ens.domains/resolvers/ccip-read](https://docs.ens.domains/resolvers/ccip-read)
-- [docs.ens.domains/learn/dns](https://docs.ens.domains/learn/dns) — DNS-imported names
 - [EIP-3668 — CCIP-Read](https://eips.ethereum.org/EIPS/eip-3668)
-- [ENSIP-10 — Wildcard Resolution](https://docs.ens.domains/ensip/10)
 - [ENSIP-19 — L2 Reverse Resolution](https://docs.ens.domains/ensip/19)
+- [ensdomains/ethers-patch](https://github.com/ensdomains/ethers-patch)
