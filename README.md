@@ -11,6 +11,7 @@ Vendor-neutral guide to the ENS protocol for app developers, auditors, and AI-ag
 - **Auth**: None required
 - **Setup**: Library of choice (viem ≥ 2.35 + wagmi recommended; ethers v6 supported)
 - **Entry point**: [`skills/ens/SKILL.md`](skills/ens/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s ens`
 
 ### `skills/offchain-ens-subname-sdk`
 
@@ -19,6 +20,7 @@ Create and manage gasless ENS subnames off-chain using the `@thenamespace/offcha
 - **Auth**: API key from [dev.namespace.ninja](https://dev.namespace.ninja)
 - **Setup**: `npm install @thenamespace/offchain-manager`
 - **Entry point**: [`skills/offchain-ens-subname-sdk/SKILL.md`](skills/offchain-ens-subname-sdk/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s offchain-ens-subname-sdk`
 
 ### `skills/celonames`
 
@@ -27,6 +29,7 @@ Register, renew, and manage Celo Names (`*.celo.eth`) on-chain via the L2Registr
 - **Auth**: Wallet with CELO or stablecoin balance
 - **Setup**: Celo RPC access (e.g., `https://forno.celo.org`)
 - **Entry point**: [`skills/celonames/SKILL.md`](skills/celonames/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s celonames`
 
 ### `skills/resolvio`
 
@@ -35,6 +38,7 @@ Resolve ENS names and addresses via the Resolvio API, including full profile loo
 - **Auth**: None required
 - **Setup**: HTTP client (examples use `curl`)
 - **Entry point**: [`skills/resolvio/SKILL.md`](skills/resolvio/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s resolvio`
 
 ### `skills/ens-components`
 
@@ -43,6 +47,7 @@ React UI kit for ENS and Namespace flows. Covers ENS name registration, record e
 - **Auth**: None required (wallet connection handled by wagmi)
 - **Setup**: `npm install @thenamespace/ens-components`
 - **Entry point**: [`skills/ens-components/SKILL.md`](skills/ens-components/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s ens-components`
 
 ## Which skill should I use?
 
@@ -56,8 +61,16 @@ React UI kit for ENS and Namespace flows. Covers ENS name registration, record e
 
 ## Installation
 
+Install all skills at once:
+
 ```bash
 npx skills add thenamespace/skills --yes
+```
+
+Or install a single skill with the `-s` flag:
+
+```bash
+npx skills add thenamespace/skills -s offchain-ens-subname-sdk
 ```
 
 ## Specification
