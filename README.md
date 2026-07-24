@@ -49,6 +49,15 @@ React UI kit for ENS and Namespace flows. Covers ENS name registration, record e
 - **Entry point**: [`skills/ens-components/SKILL.md`](skills/ens-components/SKILL.md)
 - **Install**: `npx skills add thenamespace/skills -s ens-components`
 
+### `skills/avatar-sdk`
+
+Upload, update, and delete ENS avatar and header images with SIWE v4 authentication using the `@thenamespace/avatar` SDK. Supports EOAs and deployed smart-contract wallets, automatic + manual signing flows, network/chain enforcement, and direct Viem / Ethers / wagmi / custom-`WalletProvider` integration.
+
+- **Auth**: SIWE v4 signature (wallet); Metadata Service verifies on-chain ownership of the subname
+- **Setup**: `npm install @thenamespace/avatar` (peer: `viem` or `ethers` if used as the provider)
+- **Entry point**: [`skills/avatar-sdk/SKILL.md`](skills/avatar-sdk/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s avatar-sdk`
+
 ## Which skill should I use?
 
 | Scenario                                                                                      | Skill                      |
@@ -58,6 +67,7 @@ React UI kit for ENS and Namespace flows. Covers ENS name registration, record e
 | Your agent needs to register a `*.celo.eth` name on-chain                                     | `celonames`                |
 | I need ENS profile/reverse resolution over HTTP                                               | `resolvio`                 |
 | I want React components for ENS registration, records, or subnames                            | `ens-components`           |
+| I need to upload/update/delete ENS avatar or header images                                    | `avatar-sdk`               |
 
 ## Installation
 
@@ -82,6 +92,7 @@ These skills follow the [Agent Skills specification](https://agentskills.io/spec
 - [Namespace Platform](https://namespace.ninja)
 - [Developer Dashboard](https://dev.namespace.ninja)
 - [Offchain Manager SDK](https://www.npmjs.com/package/@thenamespace/offchain-manager)
+- [Avatar SDK](https://www.npmjs.com/package/@thenamespace/avatar)
 - [Documentation](https://docs.namespace.ninja)
 
 ## License
