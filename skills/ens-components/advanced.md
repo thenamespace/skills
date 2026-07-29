@@ -29,6 +29,11 @@ Additional flow-specific prerequisites:
 - `SubnameMintForm`: the parent name must already have an active Namespace listing
 - `OffchainSubnameForm`: `@thenamespace/offchain-manager`, a configured `OffchainClient`, and a valid API key for the parent name
 
+`EnsRecordsForm`, `SubnameMintForm`, and `OffchainSubnameForm` support native
+`.eth` names and DNS names already imported into ENS (for example `example.com`).
+`EnsNameRegistrationForm` cannot import or register DNS names; it only registers
+second-level `.eth` names through the ETH Registrar Controller.
+
 ## ENS Records
 
 Use `EnsRecordsForm` when the user already owns the ENS name and wants a ready-made record editor.
@@ -49,6 +54,7 @@ import { EnsRecordsForm } from "@thenamespace/ens-components";
 Important:
 
 - The caller must fetch `existingRecords` before rendering.
+- `name` may be a native `.eth` name or a DNS name imported into ENS.
 - Use this instead of `SelectRecordsForm` unless the user explicitly needs a controlled or embedded UI.
 
 ## Controlled Records UI
@@ -99,6 +105,7 @@ import { SubnameMintForm } from "@thenamespace/ens-components";
 Important:
 
 - The parent name must already have an active Namespace listing.
+- The parent may be a native `.eth` name or a DNS name imported into ENS.
 - The component handles chain-switch prompts.
 - `referrer` belongs to `EnsNameRegistrationForm`, not `SubnameMintForm`.
 
@@ -126,6 +133,7 @@ const offchainManager = createOffchainClient({
 
 Important behavior:
 
+- The parent may be a native `.eth` name or a DNS name imported into ENS; the installed offchain SDK validates both.
 - The component uses `offchainManager.getSingleSubname()` for availability and update-mode detection.
 - If the subname already exists, it enters update mode with prefilled records.
 - If the user wants direct SDK CRUD, filtering, or record queries, use the `offchain-ens-subname-sdk` skill instead of this UI skill.
@@ -202,10 +210,15 @@ const { theme, toggleTheme } = useTheme();
 
 All main flows support `avatarUploadDomain`. Pass the app hostname so the SIWE message matches the app the user is interacting with.
 
+- EOAs and deployed smart-contract wallets can authorize uploads
+- the SDK enforces the configured network before signing (and switches when the wallet supports it)
+- upload results expose a stable `url` field
+
 Constraints:
 
 - avatar: 1:1 crop, max 2 MB
 - header: rectangular crop, max 5 MB
+- formats: JPEG, PNG, GIF, WebP, SVG
 - manual URL entry is available as fallback
 
 ### Banners and titles
@@ -258,11 +271,11 @@ Key props:
 
 ```ts
 {
-  durationLabel: string;      // e.g. "1 year" or "6 months, 3 days"
-  expiryDate: string;         // formatted date string
-  registrationCost: string;   // ETH
-  transactionFees: string;    // ETH
-  total: string;              // ETH
+  durationLabel: string; // e.g. "1 year" or "6 months, 3 days"
+  expiryDate: string; // formatted date string
+  registrationCost: string; // ETH
+  transactionFees: string; // ETH
+  total: string; // ETH
 }
 ```
 
@@ -352,5 +365,6 @@ Consumers must install:
 | Styles not applying                   | CSS not imported                           | Import `@thenamespace/ens-components/styles.css` once at the root           |
 | `CommitmentTooNew` error              | Register step called too quickly           | Wait the full 60s; the form handles this automatically                      |
 | Chain mismatch in `SubnameMintForm`   | Wallet on wrong network                    | Ensure the app's wagmi config includes the listing chain                    |
+| Avatar upload: wrong network          | Wallet chain != mainnet/sepolia for upload | App wagmi config must include the target chain; SDK will try to switch      |
 | 404 from `OffchainSubnameForm`        | API key tied to a different parent name    | Verify the API key belongs to the parent name passed as `name`              |
 | `useAccount` or storage errors in SSR | Client-only wallet code running during SSR | Guard provider code with `"use client"` and `typeof window !== "undefined"` |
