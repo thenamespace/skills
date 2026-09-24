@@ -49,6 +49,15 @@ React UI kit for ENS and Namespace flows. Covers ENS name registration, record e
 - **Entry point**: [`skills/ens-components/SKILL.md`](skills/ens-components/SKILL.md)
 - **Install**: `npx skills add thenamespace/skills -s ens-components`
 
+### `skills/mint-manager-sdk`
+
+Mint onchain ENS subnames on Ethereum, Base, and Optimism with the `@thenamespace/mint-manager` SDK. Covers `checkName` (one call for availability, price, and eligibility), building and submitting the mint transaction, setting records at mint time, capping the price with `maxValue`, ENSIP-15 normalization, and every typed error code.
+
+- **Auth**: None for reads; a wallet signs and pays for the mint transaction
+- **Setup**: `npm install @thenamespace/mint-manager viem`
+- **Entry point**: [`skills/mint-manager-sdk/SKILL.md`](skills/mint-manager-sdk/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s mint-manager-sdk`
+
 ### `skills/avatar-sdk`
 
 Upload, update, and delete ENS avatar and header images with SIWE v4 authentication using the `@thenamespace/avatar` SDK. Supports EOAs and deployed smart-contract wallets, automatic + manual signing flows, network/chain enforcement, and direct Viem / Ethers / wagmi / custom-`WalletProvider` integration.
@@ -68,6 +77,7 @@ Upload, update, and delete ENS avatar and header images with SIWE v4 authenticat
 | I need ENS profile/reverse resolution over HTTP                                               | `resolvio`                 |
 | I want React components for ENS registration, records, or subnames                            | `ens-components`           |
 | I need to upload/update/delete ENS avatar or header images                                    | `avatar-sdk`               |
+| I want to mint onchain ENS subnames on Ethereum, Base, or Optimism                            | `mint-manager-sdk`         |
 
 ## Installation
 
@@ -93,6 +103,7 @@ These skills follow the [Agent Skills specification](https://agentskills.io/spec
 - [Developer Dashboard](https://dev.namespace.ninja)
 - [Offchain Manager SDK](https://www.npmjs.com/package/@thenamespace/offchain-manager)
 - [Avatar SDK](https://www.npmjs.com/package/@thenamespace/avatar)
+- [Mint Manager SDK](https://www.npmjs.com/package/@thenamespace/mint-manager)
 - [Documentation](https://docs.namespace.ninja)
 
 ## License
