@@ -67,6 +67,15 @@ Upload, update, and delete ENS avatar and header images with SIWE v4 authenticat
 - **Entry point**: [`skills/avatar-sdk/SKILL.md`](skills/avatar-sdk/SKILL.md)
 - **Install**: `npx skills add thenamespace/skills -s avatar-sdk`
 
+### `skills/universal-usernames`
+
+Build the HTTPS endpoint that makes a brand's existing usernames resolve as ENS names (`username.brand.eth`) through Namespace Universal Usernames. Covers the endpoint contract, profile schema v1, text records, coin types and the ENSIP-19 default EVM address, contenthash, `404` versus error semantics, optional bearer authentication, adapters for Hono, Express, and Next.js, every validator issue code, and the hand-off to the parent owner who connects it in the Namespace App.
+
+- **Auth**: None to build; the endpoint can require a bearer token from Namespace. The `.eth` owner's wallet connects it.
+- **Setup**: An HTTPS host; `npx @thenamespace/universal-usernames validate` to check it
+- **Entry point**: [`skills/universal-usernames/SKILL.md`](skills/universal-usernames/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s universal-usernames`
+
 ## Which skill should I use?
 
 | Scenario                                                                                      | Skill                      |
@@ -78,6 +87,7 @@ Upload, update, and delete ENS avatar and header images with SIWE v4 authenticat
 | I want React components for ENS registration, records, or subnames                            | `ens-components`           |
 | I need to upload/update/delete ENS avatar or header images                                    | `avatar-sdk`               |
 | I want to mint onchain ENS subnames on Ethereum, Base, or Optimism                            | `mint-manager-sdk`         |
+| I want my existing users' usernames to resolve as ENS names from my own endpoint              | `universal-usernames`      |
 
 ## Installation
 
