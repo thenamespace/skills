@@ -110,6 +110,8 @@ For the client-side flow (automatic in viem ≥ 2.35 / wagmi), see [resolution.m
 
 **Doesn't fit**: anything that needs onchain ownership, transferability, or subgraph visibility.
 
+**Usernames you already have**: if the usernames already live in your own database, Namespace's Universal Usernames is a hosted Path C. You run one HTTPS endpoint that returns a profile per username, and Namespace's resolver and gateway serve `username.yourname.eth`. For building that endpoint, use the `universal-usernames` skill (`npx skills add thenamespace/skills -s universal-usernames`).
+
 ---
 
 ## Choosing a path
