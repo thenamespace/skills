@@ -13,17 +13,15 @@ wallet → ENS → Namespace gateway → GET {base URL}/{username} → brand end
 
 The gateway turns the JSON the endpoint returns into ENS records. Nobody mints anything. A user exists in ENS if and only if the endpoint answers `200` for them.
 
-Spec of record: https://docs.namespace.ninja/developer-guide/guide/universal-usernames. If this skill and the docs disagree, follow the docs.
-
 ## Before writing code, answer these
 
 Read the codebase and answer each one. Don't guess: every answer changes the code.
 
 1. **Where do usernames live?** A database table, an auth provider, an API or a registry contract. The endpoint reads from that source directly.
-2. **Can usernames change, be released or be reused?** That decides the release rule in [Good practices](#good-practices).
+2. **Can usernames change, be released or be reused?** That decides the release rule under Good practices.
 3. **Which profile fields are already public in the app?** Only those become text records.
 4. **Does the app hold wallet addresses, and did users prove control of them** (a signed message, SIWE, an embedded wallet the app created)? Only proven addresses go in `addresses`.
-5. **Are any accounts AI agents?** Only then do agent records apply ([Agent records](#agent-records-only-for-agent-accounts)).
+5. **Are any accounts AI agents?** Only then do agent records apply (see Agent records).
 6. **Does the user have a site on IPFS, IPNS, Arweave, Swarm, Tor or Sia?** Only then is `contenthash` set.
 
 ## Names
@@ -218,9 +216,9 @@ The gateway allows 5 seconds for the entire request, DNS and TLS included. A wal
 
 ## Build steps
 
-1. Answer [Before writing code](#before-writing-code-answer-these).
+1. Answer the questions under Before writing code.
 2. Add the `ens_label` column with a unique index, backfill it with `toEnsLabel` and the collision rule, and set it wherever usernames are created or changed.
-3. Write the handler. Follow [references/example-endpoint.md](references/example-endpoint.md): it's framework-neutral and tested.
+3. Write the handler. Follow `references/example-endpoint.md` in this skill: it's framework-neutral and tested.
 4. Write tests for every case listed there.
 5. Deploy, then check from a shell:
    ```sh
@@ -228,7 +226,7 @@ The gateway allows 5 seconds for the entire request, DNS and TLS included. A wal
    curl -i https://api.brand.example/happy           # expect 401
    curl -i -H "Authorization: Bearer $TOKEN" https://api.brand.example/nobody   # expect 404
    ```
-6. In the Namespace App (https://app.namespace.ninja/universal-usernames): save the base URL and token, then use **Test username**. The test runs in the browser, so it needs CORS for `https://app.namespace.ninja` with the `Authorization` header allowed. Real lookups don't come from a browser, so CORS doesn't affect resolution.
+6. On the Universal Usernames page of the Namespace App, save the base URL and token, then use **Test username**. The test runs in the browser, so it needs CORS for `https://app.namespace.ninja` with the `Authorization` header allowed. Real lookups don't come from a browser, so CORS doesn't affect resolution.
 7. Set the resolver and enable Universal Usernames in the App. Existing offchain or L2 subnames of the name stop resolving when you do.
 
 ## Good practices
