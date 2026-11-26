@@ -17,16 +17,17 @@ The gateway turns the JSON the endpoint returns into ENS records. A user exists 
 
 Read the codebase and answer each one. Don't guess: every answer changes the code.
 
-1. **Where do usernames live?** Walk this tree. The endpoint has a 300 ms budget (see Speed), and that decides it:
+1. **Where do usernames live?** The endpoint reads from the store the app already has. Never add a new database, table, cache or mirror for it: a second copy goes stale, and a stale copy serves the wrong user. The only schema change is the `ens_label` column (see Names), plus two columns for renames if the app allows them.
    ```
-   Your own database          → query it directly
-   Auth provider or other API → mirror usernames and profile fields into a local table
-                                and query that. Sync on the provider's create, update and
-                                delete webhooks, plus a daily reconcile job for missed
-                                webhooks. Never call the provider per lookup: its latency
-                                and rate limits become failed lookups.
-   Registry contract          → read from an indexer or a local mirror. Use a direct RPC
-                                read only if it answers in under 300 ms.
+   App's own database                     → query the users table directly
+   Auth provider, and the app already     → query that synced table
+     syncs users into its own database
+   Auth provider only                     → query the provider's user API by username, then
+                                            check toEnsLabel(username) === requested label.
+                                            Store ens_label in the provider's user metadata
+                                            if it can search by metadata.
+   Registry contract                      → read the contract, or the indexer the app
+                                            already uses
    ```
 2. **Can usernames change, be released or be reused?** If yes, build the rename tree under Names.
 3. **Which profile fields are already public in the app?** Public means a signed-out visitor sees it on the user's profile page today. Only those fields become text records. A field that isn't on that page stays out, even if it seems harmless (a plan or tier, a join date).
@@ -74,17 +75,18 @@ After the backfill, report to the user how many usernames got null and give exam
 
 For a new app, allow only `a-z`, `0-9` and `-` in usernames, so every username is valid. Existing usernames that break this rule keep their label if `toEnsLabel` accepts them (`_zed`).
 
-Renames and releases, walked whenever a username changes or an account goes away:
+Renames and releases use two more columns on the same users row, `released_ens_label` and `released_at`. Walk this whenever a username changes or an account goes away:
 
 ```
 User renames, or the account is deleted
-└── Move the old label into a released_labels table (label, account_id, released_at)
-    in the same transaction that clears or replaces ens_label. The old name 404s at once.
-New username normalizes to a label in released_labels
+└── In the same update: copy ens_label into released_ens_label, set released_at = now,
+    then set ens_label to the new label (or null). The old name 404s at once.
+    Soft-delete accounts: a hard delete loses the hold.
+New username normalizes to a label that some row holds in released_ens_label
 ├── released under 90 days ago
-│   ├── same account_id → give it back
-│   └── other account   → store null for now
-└── 90 days or older    → delete the hold row and assign normally
+│   ├── same row        → give it back
+│   └── different row   → store null for now
+└── 90 days or older    → clear that row's hold and assign normally
 ```
 
 Why 90 days: wallets and contacts keep sending to `happy.brand.eth` after a rename. If the label passes to someone else straight away, those payments reach a stranger.
@@ -236,9 +238,9 @@ If the app stores a bare CID, prefix it with `ipfs://`. Never send an `https://`
 The endpoint answers in under 300 ms. The gateway's hard limit is 5 seconds, but that covers DNS, TLS and the whole round trip, and a wallet's send screen sits waiting on every lookup. Over the limit, the lookup fails.
 
 - One indexed read by `ens_label`. Join or denormalize the profile fields so it's a single query.
-- No calls to third-party APIs while handling a request: no fetching the avatar to check it, no RPC call to verify a wallet, no OAuth refresh. Do that work when the user saves their profile, and store the result.
-- Deploy in the same region as the database. On serverless, use an always-warm runtime or keep one instance warm: a 1–2 s cold start eats most of the budget.
-- Don't add your own cache longer than 60 seconds. The gateway caches each answer for up to 60 s, so profile edits show up within a minute. A long cache on your side delays edits and keeps serving accounts that went private.
+- The user lookup is the only outbound call a request makes. Never fetch the avatar to check it, call an RPC to verify a wallet, or refresh OAuth during a lookup. Do that work when the user saves their profile, and store the result on the user row.
+- Deploy in the same region as the app's database. On serverless, use an always-warm runtime or keep one instance warm: a 1–2 s cold start eats most of the budget.
+- Don't add a cache. The gateway already caches each answer for up to 60 s, so profile edits show up within a minute. A cache on your side delays edits and keeps serving accounts that went private.
 
 ## Build steps
 

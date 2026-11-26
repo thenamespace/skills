@@ -1,9 +1,9 @@
 # Example endpoint
 
-A framework-neutral handler built on the Fetch API `Request` and `Response`, so it runs on Cloudflare Workers, Hono, Bun, Deno and Node. The wiring below is a Cloudflare Worker with a D1 database. Swap `findUserByEnsLabel` and the `UserRecord` fields for your own store. Uses viem 2 and zod 4:
+A framework-neutral handler built on the Fetch API `Request` and `Response`, so it runs on Cloudflare Workers, Hono, Bun, Deno and Node. The wiring below is a Cloudflare Worker that reads the app's existing Postgres. Swap `findUserByEnsLabel` and the `UserRecord` fields for your own store. Uses viem 2 and zod 4:
 
 ```sh
-npm install viem zod
+npm install viem zod postgres
 ```
 
 zod checks each record before it goes out, so a bad stored value drops only that record, and the strict `Profile` schema catches a malformed response before the gateway does.
@@ -195,15 +195,20 @@ Deploy the Worker on its own route, such as `api.brand.example`, and save that a
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "routes": [{ "pattern": "api.brand.example", "custom_domain": true }],
-  "d1_databases": [
-    { "binding": "DB", "database_name": "users", "database_id": "<your D1 database id>" }
-  ]
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<your Hyperdrive config id>" }]
 }
 ```
 
-The table needs a unique index on `ens_label`, so each lookup is one indexed read:
+Hyperdrive is Cloudflare's connection pool in front of the database the app already runs. It doesn't store data. Point it at that database once:
+
+```sh
+npx wrangler hyperdrive create app-db --connection-string="$DATABASE_URL"
+```
+
+The only schema change is the `ens_label` column with a unique index on the existing users table, so each lookup is one indexed read:
 
 ```sql
+ALTER TABLE users ADD COLUMN ens_label text;
 CREATE UNIQUE INDEX users_ens_label ON users (ens_label);
 ```
 
@@ -215,6 +220,7 @@ npx wrangler deploy
 ```
 
 ```ts src/worker.ts
+import postgres from "postgres";
 import {
   type FindUserByEnsLabel,
   handleProfileRequest,
@@ -222,7 +228,8 @@ import {
 } from "./profile-endpoint";
 
 interface Env {
-  DB: D1Database;
+  // Hyperdrive pools connections to your existing Postgres. It stores nothing.
+  HYPERDRIVE: Hyperdrive;
   ENS_ADAPTER_TOKEN: string;
   /** Set only while rotating, then delete it. */
   ENS_ADAPTER_TOKEN_PREVIOUS?: string;
@@ -230,7 +237,7 @@ interface Env {
 
 type UserRow = {
   ens_label: string;
-  is_public: number;
+  is_public: boolean;
   display_name: string | null;
   bio: string | null;
   avatar_url: string | null;
@@ -242,16 +249,10 @@ type UserRow = {
   site_contenthash: string | null;
 };
 
-// Name the columns: SELECT * reads every column, including ones added later.
-const USER_QUERY = `
-  SELECT ens_label, is_public, display_name, bio, avatar_url, website,
-         twitter_handle, github_handle, tier, verified_evm_address, site_contenthash
-  FROM users WHERE ens_label = ?`;
-
 function toUserRecord(row: UserRow): UserRecord {
   return {
     ensLabel: row.ens_label,
-    isPublic: row.is_public === 1,
+    isPublic: row.is_public,
     displayName: row.display_name,
     bio: row.bio,
     avatarUrl: row.avatar_url,
@@ -265,23 +266,30 @@ function toUserRecord(row: UserRow): UserRecord {
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     if (!env.ENS_ADAPTER_TOKEN) return new Response(null, { status: 500 });
 
-    // One indexed read by the normalized label.
+    const sql = postgres(env.HYPERDRIVE.connectionString, { max: 1, fetch_types: false });
+
+    // One indexed read on your existing users table. Name the columns:
+    // SELECT * reads every column, including ones added later.
     const findUserByEnsLabel: FindUserByEnsLabel = async (label) => {
-      const row = await env.DB.prepare(USER_QUERY)
-        .bind(label)
-        .first<UserRow>();
+      const [row] = await sql<UserRow[]>`
+        SELECT ens_label, is_public, display_name, bio, avatar_url, website,
+               twitter_handle, github_handle, tier, verified_evm_address, site_contenthash
+        FROM users WHERE ens_label = ${label}`;
       return row ? toUserRecord(row) : null;
     };
 
     const tokens = [env.ENS_ADAPTER_TOKEN, env.ENS_ADAPTER_TOKEN_PREVIOUS].filter(
       (token): token is string => Boolean(token),
     );
-    return handleProfileRequest(request, findUserByEnsLabel, tokens);
+    const response = await handleProfileRequest(request, findUserByEnsLabel, tokens);
+    // Close after the response, so the connection never delays the lookup.
+    ctx.waitUntil(sql.end());
+    return response;
   },
 } satisfies ExportedHandler<Env>;
 ```
 
-If usernames live somewhere other than D1, keep the Worker and replace `findUserByEnsLabel` with a read from Hyperdrive (Postgres), KV, or an indexer for onchain registries. Keep it to one read per lookup.
+Rename the table and columns to match your schema. If the app's data isn't in Postgres, keep the Worker and change only `findUserByEnsLabel` to query the store the app already uses. Keep it to one read per lookup.
