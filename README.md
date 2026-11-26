@@ -24,7 +24,7 @@ Create and manage gasless ENS subnames off-chain using the `@thenamespace/offcha
 
 ### `skills/universal-usernames`
 
-Build the HTTPS profile endpoint behind Namespace Universal Usernames, so an app's existing usernames resolve as ENS subnames (`happy` becomes `happy.brand.eth`). Covers ENSIP-15 username normalization, the profile v1 response, text records (including agent records), coin-type addresses, contenthash, bearer-token auth, speed limits, tests and security practices. Includes a tested, framework-neutral example handler.
+Build the HTTPS profile endpoint behind Namespace Universal Usernames, so an app's existing usernames resolve as ENS subnames (`happy` becomes `happy.brand.eth`). Covers ENSIP-15 username normalization, the profile v1 response, text records (including agent records), coin-type addresses, contenthash, bearer-token auth, speed limits and security practices. Includes a framework-neutral example handler that validates the profile with zod.
 
 - **Auth**: A bearer token you choose, saved in the [Namespace App](https://app.namespace.ninja/universal-usernames)
 - **Setup**: An ENS name you own and `viem` for normalization and address checksums

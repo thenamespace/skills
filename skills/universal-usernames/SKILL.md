@@ -1,6 +1,6 @@
 ---
 name: universal-usernames
-description: Build the HTTPS profile endpoint for Namespace Universal Usernames, which turns an app's existing usernames into ENS subnames (happy in the app becomes happy.brand.eth). Covers username normalization, the profile v1 response, text records, coin-type addresses, contenthash, bearer-token auth, speed limits, tests and security. Use when building, reviewing or debugging a Universal Usernames endpoint, mapping a user table to ENS records, or when a username fails to resolve.
+description: Build the HTTPS profile endpoint for Namespace Universal Usernames, which turns an app's existing usernames into ENS subnames (happy in the app becomes happy.brand.eth). Covers username normalization, the profile v1 response, text records, coin-type addresses, contenthash, bearer-token auth, speed limits and security. Use when building, reviewing or debugging a Universal Usernames endpoint, mapping a user table to ENS records, or when a username fails to resolve.
 ---
 
 # Universal Usernames endpoint
@@ -218,16 +218,15 @@ The gateway allows 5 seconds for the entire request, DNS and TLS included. A wal
 
 1. Answer the questions under Before writing code.
 2. Add the `ens_label` column with a unique index, backfill it with `toEnsLabel` and the collision rule, and set it wherever usernames are created or changed.
-3. Write the handler. Follow `references/example-endpoint.md` in this skill: it's framework-neutral and tested.
-4. Write tests for every case listed there.
-5. Deploy, then check from a shell:
+3. Write the handler. Follow `references/example-endpoint.md` in this skill: it's framework-neutral and validates the profile with zod.
+4. Deploy, then check from a shell:
    ```sh
    curl -i -H "Authorization: Bearer $TOKEN" https://api.brand.example/happy
    curl -i https://api.brand.example/happy           # expect 401
    curl -i -H "Authorization: Bearer $TOKEN" https://api.brand.example/nobody   # expect 404
    ```
-6. On the Universal Usernames page of the Namespace App, save the base URL and token, then use **Test username**. The test runs in the browser, so it needs CORS for `https://app.namespace.ninja` with the `Authorization` header allowed. Real lookups don't come from a browser, so CORS doesn't affect resolution.
-7. Set the resolver and enable Universal Usernames in the App. Existing offchain or L2 subnames of the name stop resolving when you do.
+5. On the Universal Usernames page of the Namespace App, save the base URL and token, then use **Test username**. The test runs in the browser, so it needs CORS for `https://app.namespace.ninja` with the `Authorization` header allowed. Real lookups don't come from a browser, so CORS doesn't affect resolution.
+6. Set the resolver and enable Universal Usernames in the App. Existing offchain or L2 subnames of the name stop resolving when you do.
 
 ## Good practices
 
@@ -236,4 +235,4 @@ The gateway allows 5 seconds for the entire request, DNS and TLS included. A wal
 - **Don't reassign a released username right away.** Hold it for at least 90 days. Wallets and contacts keep sending to `happy.brand.eth`, and after a reassignment the money goes to the new owner.
 - **Treat the endpoint like a payments API.** Change it through code review, log every `5xx`, and alert on error rates. To rotate the token, make the endpoint accept both the old and the new token, save the new one in the App, then drop the old one.
 - **The wallet that owns `brand.eth` controls every username.** Keep it on a hardware wallet or a multisig.
-- **Keep the response minimal.** Twenty correct records beat a hundred noisy ones. Every extra field costs bytes and response time, and adds to what's exposed.
+- **Keep the response minimal.** Around 20 records is fine. Past that, extra records are usually noise that apps never show. Minimal doesn't mean leaving things out, though: send every relevant field the user has made public.

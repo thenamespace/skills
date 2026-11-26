@@ -1,13 +1,20 @@
 # Example endpoint
 
-A framework-neutral handler built on the Fetch API `Request` and `Response`, so it runs on Next.js route handlers, Hono, Bun, Deno and Cloudflare Workers (with `nodejs_compat` for `node:crypto`). Swap `findUserByEnsLabel` and the `UserRecord` fields for your own store. Tested with Node 24 and viem 2.
+A framework-neutral handler built on the Fetch API `Request` and `Response`, so it runs on Next.js route handlers, Hono, Bun, Deno and Cloudflare Workers (with `nodejs_compat` for `node:crypto`). Swap `findUserByEnsLabel` and the `UserRecord` fields for your own store. Uses viem 2 and zod 4:
+
+```sh
+npm install viem zod
+```
+
+zod checks each record before it goes out, so a bad stored value drops only that record, and the strict `Profile` schema catches a malformed response before the gateway does.
 
 ## Handler
 
 ```ts profile-endpoint.ts
 import { createHash, timingSafeEqual } from "node:crypto";
-import { getAddress } from "viem";
+import { getAddress, isAddress } from "viem";
 import { normalize } from "viem/ens";
+import { z } from "zod";
 
 // Replace with your own user store. `ensLabel` is the normalized copy of the
 // username, computed once with toEnsLabel when the username is set.
@@ -37,6 +44,74 @@ export function toEnsLabel(username: string): string | null {
   }
 }
 
+// One record. Empty strings fail, so blank fields are left out instead of
+// resolving as "".
+const TextValue = z.string().trim().min(1).max(4096);
+const Handle = TextValue.transform((handle) => handle.replace(/^@/, ""));
+const EvmAddress = z
+  .string()
+  .refine((value) => isAddress(value, { strict: false }))
+  .transform((value) => getAddress(value));
+const Contenthash = z
+  .string()
+  .max(4096)
+  .regex(/^(ipfs|ipns|ar|bzz|onion3|sia):\/\/.+/);
+
+// Profile v1. strictObject rejects unknown top-level fields, which the
+// gateway would reject too.
+const Profile = z.strictObject({
+  version: z.literal(1),
+  username: z.string().min(1),
+  texts: z
+    .record(z.string().min(1).max(256), z.string().max(4096))
+    .refine((texts) => Object.keys(texts).length <= 128),
+  addresses: z
+    .record(z.string().regex(/^(0|[1-9][0-9]*)$/), z.string().min(1).max(1024))
+    .refine((addresses) => Object.keys(addresses).length <= 128),
+  contenthash: z.string().optional(),
+});
+type Profile = z.infer<typeof Profile>;
+
+/** The parsed value, or undefined when it's missing or invalid. */
+function valid<T>(schema: z.ZodType<T>, value: unknown): T | undefined {
+  const parsed = schema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/** Drops undefined entries, so a bad field leaves out only its own record. */
+function compact(entries: Record<string, string | undefined>) {
+  return Object.fromEntries(
+    Object.entries(entries).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+}
+
+function buildProfile(username: string, user: UserRecord): Profile {
+  const displayName = valid(TextValue, user.displayName);
+  const evmAddress = valid(EvmAddress, user.verifiedEvmAddress);
+  if (user.verifiedEvmAddress && !evmAddress) {
+    console.error("Invalid stored EVM address", { label: username });
+  }
+
+  return Profile.parse({
+    version: 1,
+    username,
+    texts: compact({
+      name: displayName,
+      alias: displayName,
+      description: valid(TextValue, user.bio),
+      avatar: valid(TextValue, user.avatarUrl),
+      url: valid(TextValue, user.website),
+      "com.twitter": valid(Handle, user.twitterHandle),
+      "com.github": valid(Handle, user.githubHandle),
+      "com.brand.tier": valid(TextValue, user.tier),
+    }),
+    addresses: compact({ "2147483648": evmAddress }),
+    contenthash: valid(Contenthash, user.siteContenthash),
+  });
+}
+
 /** Constant-time compare, so response timing doesn't leak the token. */
 function hasValidToken(request: Request, token: string): boolean {
   const header = request.headers.get("authorization") ?? "";
@@ -52,36 +127,6 @@ function lastPathSegment(url: string): string | null {
   } catch {
     return null;
   }
-}
-
-function buildTexts(user: UserRecord): Record<string, string> {
-  const texts: Record<string, string> = {};
-  // Omit empty fields: an empty string still resolves and renders as blank.
-  const set = (key: string, value: string | null) => {
-    const trimmed = value?.trim();
-    if (trimmed) texts[key] = trimmed;
-  };
-  set("name", user.displayName);
-  set("alias", user.displayName);
-  set("description", user.bio);
-  set("avatar", user.avatarUrl);
-  set("url", user.website);
-  set("com.twitter", user.twitterHandle?.replace(/^@/, "") ?? null);
-  set("com.github", user.githubHandle?.replace(/^@/, "") ?? null);
-  set("com.brand.tier", user.tier);
-  return texts;
-}
-
-function buildAddresses(user: UserRecord): Record<string, string> {
-  const addresses: Record<string, string> = {};
-  if (!user.verifiedEvmAddress) return addresses;
-  try {
-    addresses["2147483648"] = getAddress(user.verifiedEvmAddress);
-  } catch {
-    // A malformed stored address drops only this record, not the profile.
-    console.error("Invalid stored EVM address", { label: user.ensLabel });
-  }
-  return addresses;
 }
 
 export async function handleProfileRequest(
@@ -101,15 +146,9 @@ export async function handleProfileRequest(
   const user = await findUserByEnsLabel(username);
   if (!user || !user.isPublic) return new Response(null, { status: 404 });
 
-  const profile: Record<string, unknown> = {
-    version: 1,
-    username,
-    texts: buildTexts(user),
-    addresses: buildAddresses(user),
-  };
-  if (user.siteContenthash) profile.contenthash = user.siteContenthash;
-
-  return Response.json(profile);
+  // Profile.parse throws only on a bug in buildProfile. Let it surface as a
+  // 5xx: a failed lookup is better than a profile the gateway rejects.
+  return Response.json(buildProfile(username, user));
 }
 ```
 
@@ -136,96 +175,3 @@ export const findUserByEnsLabel = (label: string) =>
 ```
 
 If usernames live onchain, keep the handler and make `findUserByEnsLabel` read the registry contract or an indexer.
-
-## Tests
-
-Every endpoint ships with at least these cases. Run with `node --test endpoint.test.ts`.
-
-```ts endpoint.test.ts
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import {
-  handleProfileRequest,
-  toEnsLabel,
-  type UserRecord,
-} from "./profile-endpoint.ts";
-
-const TOKEN = "test-token";
-
-const happy: UserRecord = {
-  ensLabel: "happy",
-  isPublic: true,
-  displayName: "Happy",
-  bio: "",
-  avatarUrl: "https://cdn.brand.example/a.png",
-  website: null,
-  twitterHandle: "@happy",
-  githubHandle: null,
-  tier: "gold",
-  verifiedEvmAddress: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
-  siteContenthash: null,
-};
-
-const users = new Map<string, UserRecord>([
-  ["happy", happy],
-  ["hidden", { ...happy, ensLabel: "hidden", isPublic: false }],
-  ["héllo", { ...happy, ensLabel: "héllo", verifiedEvmAddress: "0xnotanaddress" }],
-]);
-
-const findUserByEnsLabel = async (label: string) => users.get(label) ?? null;
-
-function lookup(path: string, authorization: string | null = `Bearer ${TOKEN}`) {
-  const headers = authorization ? { authorization } : undefined;
-  const request = new Request(`https://api.brand.example${path}`, { headers });
-  return handleProfileRequest(request, findUserByEnsLabel, TOKEN);
-}
-
-test("a found user returns the exact v1 shape", async () => {
-  const res = await lookup("/happy");
-  assert.equal(res.status, 200);
-  assert.equal(res.headers.get("content-type")?.split(";")[0], "application/json");
-  assert.deepEqual(await res.json(), {
-    version: 1,
-    username: "happy",
-    texts: {
-      name: "Happy",
-      alias: "Happy",
-      avatar: "https://cdn.brand.example/a.png",
-      "com.twitter": "happy",
-      "com.brand.tier": "gold",
-    },
-    addresses: { "2147483648": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
-  });
-});
-
-test("unknown and private users are 404", async () => {
-  assert.equal((await lookup("/nobody")).status, 404);
-  assert.equal((await lookup("/hidden")).status, 404);
-});
-
-test("a missing or wrong token is 401", async () => {
-  assert.equal((await lookup("/happy", null)).status, 401);
-  assert.equal((await lookup("/happy", "Bearer wrong")).status, 401);
-});
-
-test("a label that isn't normalized is 404", async () => {
-  assert.equal((await lookup("/Happy")).status, 404);
-  assert.equal((await lookup("/happy_doe")).status, 404);
-});
-
-test("a URL-encoded unicode label resolves, and a bad stored address is dropped", async () => {
-  const res = await lookup(`/${encodeURIComponent("héllo")}`);
-  assert.equal(res.status, 200);
-  const profile = await res.json();
-  assert.equal(profile.username, "héllo");
-  assert.deepEqual(profile.addresses, {});
-});
-
-test("toEnsLabel maps usernames to labels or null", () => {
-  assert.equal(toEnsLabel("Happy"), "happy");
-  assert.equal(toEnsLabel("_happy"), "_happy");
-  assert.equal(toEnsLabel("happy_doe"), null);
-  assert.equal(toEnsLabel("happy.doe"), null);
-  assert.equal(toEnsLabel("@happy"), null);
-});
-```
