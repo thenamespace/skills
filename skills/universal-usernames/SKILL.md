@@ -17,29 +17,25 @@ The gateway turns the JSON the endpoint returns into ENS records. A user exists 
 
 Read the codebase and answer each one. Don't guess: every answer changes the code.
 
-1. **Where do usernames live?** The endpoint reads from the store the app already has. Never add a new database, table, cache or mirror for it: a second copy goes stale, and a stale copy serves the wrong user. The only schema change is the `ens_label` column (see Names), plus two columns for renames if the app allows them.
+1. **Where do users live?** The endpoint reads from what the app already has. Never add a database, table, cache or mirror for it: a second copy goes stale and serves the wrong user.
    ```
-   App's own database                     → query the users table directly
-   Auth provider, and the app already     → query that synced table
-     syncs users into its own database
-   Auth provider only                     → query the provider's user API by username, then
-                                            check toEnsLabel(username) === requested label.
-                                            Store ens_label in the provider's user metadata
-                                            if it can search by metadata.
-   Registry contract                      → read the contract, or the indexer the app
-                                            already uses
+   The app has an internal API for users → call it (the common case: most databases
+                                           sit behind an API only a few services reach)
+   The endpoint can reach the database   → read it directly, one query per lookup
+   Usernames live in a registry contract → read the contract, or the indexer the app
+                                           already uses
    ```
-2. **Can usernames change, be released or be reused?** If yes, build the rename tree under Names.
-3. **Which profile fields are already public in the app?** Public means a signed-out visitor sees it on the user's profile page today. Only those fields become text records. A field that isn't on that page stays out, even if it seems harmless (a plan or tier, a join date).
-4. **Does the app hold wallet addresses, and did users prove control of them?** Proven means the user signed a message with that wallet (SIWE, SIWS), or it's a non-custodial embedded wallet whose keys the user can export. A custodial wallet the app holds keys for counts only if the app already shows it to the user as their deposit address. A pasted address is never proven. Only proven addresses go in `addresses`.
-5. **Are any accounts AI agents?** Only then do agent records apply (see Agent records).
-6. **Does the user have a site on IPFS, IPNS, Arweave, Swarm, Tor or Sia?** Only then is `contenthash` set.
+   Renames, releases and deleted accounts are the source's job. The endpoint asks for one name and returns what the source says about it now.
+2. **Which profile fields are already public in the app?** Public means a signed-out visitor sees it on the user's profile page today. Only those fields become text records. A field that isn't on that page stays out, even if it seems harmless (a plan or tier, a join date).
+3. **Which wallet addresses does the app hold for each user, and who set them?** Send an address only if it comes from a vetted source: the user set it on their own profile, or the app or company assigned it (a wallet it created for them). Never take one from a field anyone else can edit, or parse one out of free text such as a bio.
+4. **Are any accounts AI agents?** Only then do agent records apply (see Agent records).
+5. **Does the user have a site on IPFS, IPNS, Arweave, Swarm, Tor or Sia?** Only then is `contenthash` set.
+
+Not every name has a wallet. A profile with only text records, or only a contenthash, is valid.
 
 ## Names
 
-Each username becomes exactly one ENS label and must pass ENSIP-15 normalization. Wallets normalize before they look a name up, so the endpoint only ever receives normalized labels.
-
-**Store a normalized copy** of every username in its own column (`ens_label`), computed when the username is created or changed, with a unique index. Look users up by that column only. Never normalize at request time against the raw username column. That forces a scan or a case-insensitive match that diverges from ENSIP-15, and it's slow.
+Normalization is the base of everything here. Each username becomes exactly one ENS label and must pass ENSIP-15 normalization. Wallets normalize a name before they look it up, so the endpoint only ever receives normalized labels, and the lookup has to match those labels exactly.
 
 ```ts
 import { normalize } from 'viem/ens';
@@ -55,41 +51,10 @@ export function toEnsLabel(username: string): string | null {
 }
 ```
 
-Walk this for every username:
-
-```
-toEnsLabel(username)
-├── throws or returns null → store null. This user gets no ENS name. Don't rewrite their username.
-└── returns a label
-    ├── another user already has this label (Happy vs happy)
-    │   └── the account whose username was set earliest keeps it (account creation
-    │       time if that isn't recorded); store null for the other. A later signup or
-    │       rename never takes a label from its holder. Never let the endpoint pick
-    │       between two users at request time.
-    └── unique → store it
-```
-
-Why null instead of fixing the username (`happy_doe` → `happy-doe`): a rewritten name can collide with a real user, and the user never chose it. Sending payments to a name the user didn't pick isn't acceptable.
-
-After the backfill, report to the user how many usernames got null and give examples, so they know who has no ENS name. Typical nulls: `happy_doe` (an underscore is allowed only as the first character), `happy doe`, `@happy`, `happy!`, `ab--cd`, `happy.doe`. `Happy` isn't a null: it maps to `happy`.
-
-For a new app, allow only `a-z`, `0-9` and `-` in usernames, so every username is valid. Existing usernames that break this rule keep their label if `toEnsLabel` accepts them (`_zed`).
-
-Renames and releases use two more columns on the same users row, `released_ens_label` and `released_at`. Walk this whenever a username changes or an account goes away:
-
-```
-User renames, or the account is deleted
-└── In the same update: copy ens_label into released_ens_label, set released_at = now,
-    then set ens_label to the new label (or null). The old name 404s at once.
-    Soft-delete accounts: a hard delete loses the hold.
-New username normalizes to a label that some row holds in released_ens_label
-├── released under 90 days ago
-│   ├── same row        → give it back
-│   └── different row   → store null for now
-└── 90 days or older    → clear that row's hold and assign normally
-```
-
-Why 90 days: wallets and contacts keep sending to `happy.brand.eth` after a rename. If the label passes to someone else straight away, those payments reach a stranger.
+- **Look users up by the normalized label, and return at most one user per label.** If the source stores raw usernames, store a normalized copy next to each one (computed with `toEnsLabel`) and look up by that. Normalizing on the fly with a case-insensitive match differs from ENSIP-15 and can match the wrong user.
+- **A username that `toEnsLabel` returns null for gets no ENS name.** Never rewrite it (`happy_doe` → `happy-doe`): the rewritten name can belong to someone else, and payments would go to a name the user never picked.
+- Typical invalid usernames: `happy_doe` (an underscore is allowed only as the first character), `happy doe`, `@happy`, `happy!`, `ab--cd`, `happy.doe`. `Happy` is valid and maps to `happy`. Tell the user how many of their usernames are invalid, with examples, so they know who has no ENS name.
+- For a new app, allow only `a-z`, `0-9` and `-` in usernames, so every username is valid.
 
 ## Request
 
@@ -102,8 +67,8 @@ User-Agent: Namespace-UniversalUsernames/1
 ```
 
 - **Base URL:** HTTPS with a valid certificate, on a public IP. A path is allowed (`https://api.brand.example/ens`). No query string, fragment or `user:pass@`.
-- **Route:** one path segment after the base URL. Mount the endpoint on its own subdomain (`api.brand.example`) or a dedicated path (`/ens`), never at the root of an app that has its own routes. URL-decode the segment, then 404 unless `toEnsLabel(segment) === segment`. That guard costs nothing and skips a database query for junk.
-- **Auth:** the brand saves a bearer token in the Namespace App next to the base URL. Always require it. Read it from an environment variable, compare in constant time, and reply `401` to anything else. A token for one origin isn't carried over when the base URL moves to a new origin, so save it again after changing hosts.
+- **Route:** one path segment after the base URL. Mount the endpoint on its own subdomain (`api.brand.example`) or a dedicated path (`/ens`), never at the root of an app that has its own routes. Exactly one segment after the base path: 404 anything deeper. URL-decode the segment, then 404 unless `toEnsLabel(segment) === segment`. That guard costs nothing and skips a lookup for junk.
+- **Auth:** the brand saves a bearer token in the Namespace App next to the base URL. Require one by default, and leave it out only if the brand explicitly asks to. Without it, anyone can call the endpoint and walk the user list. Read it from an environment variable, compare in constant time, and reply `401` to anything else. A token for one origin isn't carried over when the base URL moves to a new origin, so save it again after changing hosts.
 - **Methods:** only `GET`. The gateway never sends a body or query parameters.
 
 ## Response
@@ -115,10 +80,10 @@ OPTIONS from https://app.namespace.ninja                → 204 + CORS headers (
 method isn't GET                                        → 405
 token missing or wrong                                  → 401
 segment isn't a normalized label                        → 404
-no user with that ens_label                             → 404
-user is private, suspended, banned, deleted or unverified → 404
+no user with that label                                 → 404
+user is private, suspended, banned or deleted           → 404
 user found and public                                   → 200 + profile
-your database or code threw                             → 500, logged (lookup fails; never fake a 404)
+the user lookup or your code threw                      → 500, logged (lookup fails; never fake a 404)
 ```
 
 Only `404` means "no such name". `3xx`, `401`, `403`, `429`, `5xx`, a timeout or a non-JSON body make the lookup fail, and wallets show an error. So never redirect, and never rate-limit requests that carry the valid token. The gateway already caches each answer and merges concurrent lookups for the same name.
@@ -173,14 +138,29 @@ Is there a standard key for it? (table below)
 
 | Key | Value |
 | --- | --- |
-| `name` and `alias` | Display name. Set both to the same value: ENSIP-18 renamed `name` to `alias`, and many apps still read only `name`. |
-| `avatar` | `https://` or `ipfs://` image URL, or an NFT as `eip155:1/erc721:0x…/1` (ENSIP-12). Use a stable URL. If the app only has signed or expiring URLs, serve a route on your own domain that redirects to a fresh one, or leave `avatar` out. Never sign a URL during the lookup. |
+| `name` and `alias` | Display name. Set both to the same value: some apps read `name`, newer ones read `alias` (ENSIP-18). |
+| `avatar` | `https://` or `ipfs://` image URL, or an NFT in ENSIP-12 form (see NFT avatars). Use a stable URL. If the app only has signed or expiring URLs, serve a route on your own domain that redirects to a fresh one, or leave `avatar` out. Never sign a URL during the lookup. |
 | `header` | Banner image, same formats as `avatar` |
 | `description` | Short bio |
 | `url` | Website. Send only `https://` URLs and drop anything else: `javascript:` or `http:` in a public record is a phishing vector |
 | `email` | Only if the user switched on showing it on their public profile. Indexers keep it after you remove it, so never send it on an implied or default setting |
 | `location`, `timezone` | `Berlin, Germany`, `Europe/Berlin` (IANA) |
 | `com.twitter`, `com.github`, `org.telegram`, `com.discord` | Handle only: no `@`, no URL |
+
+### NFT avatars
+
+If the user's avatar is an NFT, send it in ENSIP-12 form, never as a marketplace or image URL:
+
+```
+eip155:<chainId>/<standard>:<contract address>/<token ID>
+
+eip155:1/erc721:0xb47e3cd837ddf8e4c57f05d70ab865de6e193bbb/0      ERC-721 on Ethereum
+eip155:1/erc1155:0x495f947276749ce646f68ac8c248420045cb7b5e/123   ERC-1155 on Ethereum
+```
+
+- Build it from the three things the app already stores for the NFT: chain ID, contract address and token ID. `standard` is `erc721` or `erc1155`. The example has a `nftAvatar()` helper.
+- Apps check that the name's EVM address owns the NFT before showing it. Send the owning wallet under `addresses`, or the avatar won't render.
+- Use this form only when the app knows the NFT's contract and token ID. If it only has the image, send the image URL instead.
 
 Rules for every text record:
 
@@ -232,14 +212,16 @@ Is the chain EVM (Ethereum, Base, Optimism, Arbitrum, Polygon, …)?
 ### Which addresses to send
 
 ```
-For each wallet on the user's record:
-├── Not proven (pasted, imported, unverified) → leave it out
-├── Fails the format check for its chain      → leave it out, log it
-└── Proven and valid                          → add it under its coin type
+For each address on the user's record:
+├── Set by someone other than the user or the app → leave it out
+├── Fails the format check for its chain          → leave it out, log it
+├── EVM address in mixed case with a bad checksum → leave it out, log it. Never "fix" it
+└── Valid                                         → add it under its coin type
 ```
 
-- **Proven** means the user signed a message with that wallet (SIWE, SIWS), or it's a non-custodial embedded wallet whose keys the user can export. This record decides where money goes, so a pasted address would let anyone redirect payments meant for that user.
-- **Validate before sending and drop only the bad record.** A thrown error becomes a `5xx` and fails the whole lookup. EVM: `isAddress`, then `getAddress`. Other chains: a format check is enough, because the gateway decodes the address fully and a value it rejects fails only that record.
+- **Vetted source only.** The user set it on their own profile, or the app or company assigned it. Payments to the name go to this address, so it must never come from a field another person can edit, or be parsed out of free text.
+- **Never change an address, only drop it.** A mixed-case EVM address with a bad checksum usually means a typo. Re-checksumming it with `getAddress` would publish the typo as a valid-looking address, and money sent there is lost. Check it with viem's strict `isAddress(value)`. All-lowercase addresses carry no checksum, so they pass and get checksummed.
+- **Validate before sending, and drop only the bad record.** A thrown error becomes a `5xx` and fails the whole lookup. Other chains: a format check is enough, because the gateway decodes the address fully and a value it rejects fails only that record.
 - An invalid value under a chain-specific key doesn't fall back to the default address, so that chain resolves to nothing.
 
 ## Contenthash
@@ -261,16 +243,16 @@ If the app stores a bare CID, prefix it with `ipfs://`. Never send an `https://`
 
 The endpoint answers in under 300 ms. The gateway's hard limit is 5 seconds, but that covers DNS, TLS and the whole round trip, and a wallet's send screen sits waiting on every lookup. Over the limit, the lookup fails.
 
-- One indexed read by `ens_label`. Join or denormalize the profile fields so it's a single query.
+- One lookup per request: one API call or one indexed query by the normalized label, returning every field the profile needs.
 - The user lookup is the only outbound call a request makes. Never fetch the avatar to check it, call an RPC to verify a wallet, or refresh OAuth during a lookup. Do that work when the user saves their profile, and store the result on the user row.
-- Deploy in the same region as the app's database. On serverless, use an always-warm runtime or keep one instance warm: a 1–2 s cold start eats most of the budget.
+- Deploy close to the app's API or database. On serverless, use an always-warm runtime or keep one instance warm: a 1–2 s cold start eats most of the budget.
 - Don't add a cache. The gateway already caches each answer for up to 60 s, so profile edits show up within a minute. A cache on your side delays edits and keeps serving accounts that went private.
 
 ## Build steps
 
 1. Answer the questions under Before writing code.
-2. Add the `ens_label` column with a unique index, backfill it with `toEnsLabel` and the collision rule, and set it wherever usernames are created or changed.
-3. Write the handler. Follow `references/example-endpoint.md` in this skill: one Cloudflare Worker file, with the user lookup left for you to point at your existing API or database.
+2. Make sure the source can look a user up by normalized label (see Names).
+3. Write the handler from `references/example-endpoint.md` in this skill. It's one Cloudflare Worker file that runs as is on sample data. Hook `getUser` up to the app's API or database and keep the rest.
 4. Deploy, then check from a shell:
    ```sh
    curl -i -H "Authorization: Bearer $TOKEN" https://api.brand.example/happy
@@ -284,7 +266,6 @@ The endpoint answers in under 300 ms. The gateway's hard limit is 5 seconds, but
 
 - **Everything returned is public.** Anyone can guess a username and read the profile, and indexers copy what they read, so removing a field later doesn't take it back. Return only what the user already shows publicly in the app.
 - **Return `404` for private, suspended, banned and deleted accounts**, the same response as for an unknown user, so the endpoint doesn't reveal which accounts exist.
-- **Never reassign a released label inside 90 days.** Follow the rename tree under Names.
 - **Treat the endpoint like a payments API.** Change it through code review, log every `5xx`, and alert on error rates. To rotate the token, set the new one as the current token and the old one as the previous token, save the new one in the App, then delete the previous one.
 - **The wallet that owns `brand.eth` controls every username.** Keep it on a hardware wallet or a multisig.
-- **Send every public field that passes the Text records tree, and nothing else.** Up to 20 records needs no review. Past 20, review the custom keys and keep only the ones another app would show or act on. Apps don't render the rest, and every extra record adds bytes, response time and exposure. Never drop a standard key or a proven address to get under 20.
+- **Send every public field that passes the Text records tree, and nothing else.** Up to 20 records needs no review. Past 20, review the custom keys and keep only the ones another app would show or act on. Apps don't render the rest, and every extra record adds bytes, response time and exposure. Never drop a standard key or a valid address to get under 20.
