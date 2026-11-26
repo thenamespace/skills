@@ -78,9 +78,7 @@ type User = {
   website?: string;
   twitter?: string; // only handles connected through OAuth
   github?: string;
-  // Only addresses the user set on their profile, or the app assigned them.
-  // Never from a field anyone else can edit. Not every user has one.
-  wallets?: {
+  wallets?: { // not every user has one
     evm?: string; // used on every EVM chain
     base?: string; // only if the user set a different address for Base
     bitcoin?: string;

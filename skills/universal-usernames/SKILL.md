@@ -17,7 +17,7 @@ The gateway turns the JSON the endpoint returns into ENS records. A user exists 
 
 Read the codebase and answer each one. Don't guess: every answer changes the code.
 
-1. **Where do users live?** The endpoint reads from what the app already has. Never add a database, table, cache or mirror for it: a second copy goes stale and serves the wrong user.
+1. **Where do users live?** The endpoint reads from what the app already has. Never add a database, table, cache or mirror for it: a second copy goes stale and serves the wrong user. A normalized-username column on the existing user table is fine (see Names).
    ```
    The app has an internal API for users → call it (the common case: most databases
                                            sit behind an API only a few services reach)
@@ -27,9 +27,8 @@ Read the codebase and answer each one. Don't guess: every answer changes the cod
    ```
    Renames, releases and deleted accounts are the source's job. The endpoint asks for one name and returns what the source says about it now.
 2. **Which profile fields are already public in the app?** Public means a signed-out visitor sees it on the user's profile page today. Only those fields become text records. A field that isn't on that page stays out, even if it seems harmless (a plan or tier, a join date).
-3. **Which wallet addresses does the app hold for each user, and who set them?** Send an address only if it comes from a vetted source: the user set it on their own profile, or the app or company assigned it (a wallet it created for them). Never take one from a field anyone else can edit, or parse one out of free text such as a bio.
-4. **Are any accounts AI agents?** Only then do agent records apply (see Agent records).
-5. **Does the user have a site on IPFS, IPNS, Arweave, Swarm, Tor or Sia?** Only then is `contenthash` set.
+3. **Are any accounts AI agents?** Only then do agent records apply (see Agent records).
+4. **Does the user have a site on IPFS, IPNS, Arweave, Swarm, Tor or Sia?** Only then is `contenthash` set.
 
 Not every name has a wallet. A profile with only text records, or only a contenthash, is valid.
 
@@ -51,7 +50,9 @@ export function toEnsLabel(username: string): string | null {
 }
 ```
 
-- **Look users up by the normalized label, and return at most one user per label.** If the source stores raw usernames, store a normalized copy next to each one (computed with `toEnsLabel`) and look up by that. Normalizing on the fly with a case-insensitive match differs from ENSIP-15 and can match the wrong user.
+- **Look users up by the normalized label, and return at most one user per label.** Normalizing on the fly with a case-insensitive match differs from ENSIP-15 and can match the wrong user.
+- **If the source only stores raw usernames, add a normalized column to the existing user table.** It's a field on the same row, so it can't go stale the way a separate store does. Set it with `toEnsLabel` in the code that already writes usernames (signup, rename), and backfill existing rows. Keep it out of ORM hooks or middleware that rewrite every write.
+- **Ask before adding a unique index on that column.** It changes signup: two usernames that normalize the same (`Happy` and `happy`) can no longer both exist. Tell the user how many existing usernames collide, and that a colliding label gets no ENS name until they choose who keeps it.
 - **A username that `toEnsLabel` returns null for gets no ENS name.** Never rewrite it (`happy_doe` → `happy-doe`): the rewritten name can belong to someone else, and payments would go to a name the user never picked.
 - Typical invalid usernames: `happy_doe` (an underscore is allowed only as the first character), `happy doe`, `@happy`, `happy!`, `ab--cd`, `happy.doe`. `Happy` is valid and maps to `happy`. Tell the user how many of their usernames are invalid, with examples, so they know who has no ENS name.
 - For a new app, allow only `a-z`, `0-9` and `-` in usernames, so every username is valid.
@@ -83,10 +84,10 @@ segment isn't a normalized label                        → 404
 no user with that label                                 → 404
 user is private, suspended, banned or deleted           → 404
 user found and public                                   → 200 + profile
-the user lookup or your code threw                      → 500, logged (lookup fails; never fake a 404)
+the user lookup or your code threw                      → 500, logged
 ```
 
-Only `404` means "no such name". `3xx`, `401`, `403`, `429`, `5xx`, a timeout or a non-JSON body make the lookup fail, and wallets show an error. So never redirect, and never rate-limit requests that carry the valid token. The gateway already caches each answer and merges concurrent lookups for the same name.
+Only `404` means "no such name". `3xx`, `401`, `403`, `429`, `5xx`, a timeout or a non-JSON body make the lookup fail, and wallets show an error. So never redirect, and never rate-limit requests that carry the valid token. The gateway already caches each answer and merges concurrent lookups for the same name. Limiting requests without a valid token is fine: they never reach the lookup.
 
 Body for `200`, served as `Content-Type: application/json`, uncompressed:
 
@@ -139,7 +140,7 @@ Is there a standard key for it? (table below)
 | Key | Value |
 | --- | --- |
 | `name` and `alias` | Display name. Set both to the same value: some apps read `name`, newer ones read `alias` (ENSIP-18). |
-| `avatar` | `https://` or `ipfs://` image URL, or an NFT in ENSIP-12 form (see NFT avatars). Use a stable URL. If the app only has signed or expiring URLs, serve a route on your own domain that redirects to a fresh one, or leave `avatar` out. Never sign a URL during the lookup. |
+| `avatar` | `https://` or `ipfs://` image URL, or an NFT in ENSIP-12 form (see NFT avatars). Use a stable URL: a signed or expiring one breaks once cached. |
 | `header` | Banner image, same formats as `avatar` |
 | `description` | Short bio |
 | `url` | Website. Send only `https://` URLs and drop anything else: `javascript:` or `http:` in a public record is a phishing vector |
@@ -206,20 +207,18 @@ Is the chain EVM (Ethereum, Base, Optimism, Arbitrum, Polygon, …)?
 | --- | --- | --- |
 | Every EVM chain (default) | `2147483648` | `0x…`, checksummed with viem's `getAddress` |
 | One EVM chain | `0x80000000 \| chainId` in decimal | `0x…`, checksummed |
-| Bitcoin | `0` | Mainnet only: `bc1…`, `1…` or `3…`. Never a testnet `tb1…` |
+| Bitcoin | `0` | Mainnet: `bc1…`, `1…` or `3…` |
 | Solana | `501` | Base58 public key, 32–44 characters |
 
 ### Which addresses to send
 
 ```
 For each address on the user's record:
-├── Set by someone other than the user or the app → leave it out
 ├── Fails the format check for its chain          → leave it out, log it
 ├── EVM address in mixed case with a bad checksum → leave it out, log it. Never "fix" it
 └── Valid                                         → add it under its coin type
 ```
 
-- **Vetted source only.** The user set it on their own profile, or the app or company assigned it. Payments to the name go to this address, so it must never come from a field another person can edit, or be parsed out of free text.
 - **Never change an address, only drop it.** A mixed-case EVM address with a bad checksum usually means a typo. Re-checksumming it with `getAddress` would publish the typo as a valid-looking address, and money sent there is lost. Check it with viem's strict `isAddress(value)`. All-lowercase addresses carry no checksum, so they pass and get checksummed.
 - **Validate before sending, and drop only the bad record.** A thrown error becomes a `5xx` and fails the whole lookup. Other chains: a format check is enough, because the gateway decodes the address fully and a value it rejects fails only that record.
 - An invalid value under a chain-specific key doesn't fall back to the default address, so that chain resolves to nothing.
@@ -265,7 +264,6 @@ The endpoint answers in under 300 ms. The gateway's hard limit is 5 seconds, but
 ## Good practices
 
 - **Everything returned is public.** Anyone can guess a username and read the profile, and indexers copy what they read, so removing a field later doesn't take it back. Return only what the user already shows publicly in the app.
-- **Return `404` for private, suspended, banned and deleted accounts**, the same response as for an unknown user, so the endpoint doesn't reveal which accounts exist.
 - **Treat the endpoint like a payments API.** Change it through code review, log every `5xx`, and alert on error rates. To rotate the token, set the new one as the current token and the old one as the previous token, save the new one in the App, then delete the previous one.
 - **The wallet that owns `brand.eth` controls every username.** Keep it on a hardware wallet or a multisig.
 - **Send every public field that passes the Text records tree, and nothing else.** Up to 20 records needs no review. Past 20, review the custom keys and keep only the ones another app would show or act on. Apps don't render the rest, and every extra record adds bytes, response time and exposure. Never drop a standard key or a valid address to get under 20.
