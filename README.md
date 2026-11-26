@@ -22,6 +22,15 @@ Create and manage gasless ENS subnames off-chain using the `@thenamespace/offcha
 - **Entry point**: [`skills/offchain-ens-subname-sdk/SKILL.md`](skills/offchain-ens-subname-sdk/SKILL.md)
 - **Install**: `npx skills add thenamespace/skills -s offchain-ens-subname-sdk`
 
+### `skills/universal-usernames`
+
+Build the HTTPS profile endpoint behind Namespace Universal Usernames, so an app's existing usernames resolve as ENS subnames (`happy` becomes `happy.brand.eth`). Covers ENSIP-15 username normalization, the profile v1 response, text records (including agent records), coin-type addresses, contenthash, bearer-token auth, speed limits, tests and security practices. Includes a tested, framework-neutral example handler.
+
+- **Auth**: A bearer token you choose, saved in the [Namespace App](https://app.namespace.ninja/universal-usernames)
+- **Setup**: An ENS name you own and `viem` for normalization and address checksums
+- **Entry point**: [`skills/universal-usernames/SKILL.md`](skills/universal-usernames/SKILL.md)
+- **Install**: `npx skills add thenamespace/skills -s universal-usernames`
+
 ### `skills/celonames`
 
 Register, renew, and manage Celo Names (`*.celo.eth`) on-chain via the L2Registrar contract on Celo mainnet. Names are ERC721 NFTs with cross-chain resolution via CCIP-Read.
