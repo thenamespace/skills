@@ -1,38 +1,131 @@
 # Example endpoint
 
-A framework-neutral handler built on the Fetch API `Request` and `Response`, so it runs on Cloudflare Workers, Hono, Bun, Deno and Node. The wiring below is a Cloudflare Worker that reads the app's existing Postgres. Swap `findUserByEnsLabel` and the `UserRecord` fields for your own store. Uses viem 2 and zod 4:
+One Cloudflare Worker file. It needs no database: `getUser` returns sample data so it runs as is. Point `getUser` at the API or database the app already has, and leave the rest of the file alone.
+
+The file has seven parts, in the order a request uses them:
+
+1. **Your user data:** the `User` shape and `getUser`. This is the only part you change.
+2. **Usernames:** `toEnsLabel`, the ENSIP-15 check.
+3. **Coin types:** SLIP-44 numbers for non-EVM chains, `evmCoinType(chainId)` for EVM chains.
+4. **Validating records:** each record is checked on its own, and a bad one is dropped.
+5. **The profile:** builds the v1 JSON.
+6. **Auth and CORS:** the bearer token (two during rotation) and the App's test button.
+7. **The route:** status codes, and error handling that answers 500, never a fake 404.
+
+## Setup
 
 ```sh
-npm install viem zod postgres
+npm create cloudflare@latest ens-profile-endpoint -- --type=hello-world --lang=ts
+cd ens-profile-endpoint
+npm install viem zod
 ```
 
-zod checks each record before it goes out, so a bad stored value drops only that record, and the strict `Profile` schema catches a malformed response before the gateway does.
+```jsonc wrangler.jsonc
+{
+  "name": "ens-profile-endpoint",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  // node:crypto, for the constant-time token check
+  "compatibility_flags": ["nodejs_compat"],
+  // The base URL you save in the Namespace App
+  "routes": [{ "pattern": "api.brand.example", "custom_domain": true }]
+}
+```
 
-## Handler
+The token is a secret, never a value in `wrangler.jsonc`. To rotate it, put the old value in `ENS_ADAPTER_TOKEN_PREVIOUS`, put the new one in `ENS_ADAPTER_TOKEN`, save the new one in the App, then delete the previous secret.
 
-```ts src/profile-endpoint.ts
+```sh
+npx wrangler secret put ENS_ADAPTER_TOKEN
+npx wrangler deploy
+```
+
+## src/index.ts
+
+```ts src/index.ts
+/**
+ * Universal Usernames profile endpoint, as a Cloudflare Worker.
+ *
+ * Namespace calls GET {base URL}/{username} and turns the JSON this returns
+ * into ENS records, so `happy` in your app resolves as `happy.brand.eth`.
+ */
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getAddress, isAddress } from "viem";
 import { normalize } from "viem/ens";
 import { z } from "zod";
 
-// Replace with your own user store. `ensLabel` is the normalized copy of the
-// username, computed once with toEnsLabel when the username is set.
-export type UserRecord = {
-  ensLabel: string;
+interface Env {
+  ENS_ADAPTER_TOKEN: string;
+  /** Set only while rotating the token, then delete it. */
+  ENS_ADAPTER_TOKEN_PREVIOUS?: string;
+}
+
+// ---------------------------------------------------------------------------
+// 1. Your user data
+// ---------------------------------------------------------------------------
+
+/** What this endpoint needs to know about a user. Map your own fields to it. */
+type User = {
   isPublic: boolean;
-  displayName: string | null;
-  bio: string | null;
-  avatarUrl: string | null;
-  website: string | null;
-  twitterHandle: string | null;
-  githubHandle: string | null;
-  tier: string | null;
-  verifiedEvmAddress: string | null;
-  siteContenthash: string | null;
+  displayName?: string;
+  bio?: string;
+  avatarUrl?: string;
+  website?: string;
+  twitter?: string; // only handles connected through OAuth
+  github?: string;
+  // Only addresses the user proved they control, e.g. by signing a message.
+  wallets: {
+    evm?: string; // used on every EVM chain
+    base?: string; // only if the user wants a different address on Base
+    bitcoin?: string;
+    solana?: string;
+  };
+  ipfsSite?: string; // e.g. "ipfs://bafy..."
 };
 
-export type FindUserByEnsLabel = (label: string) => Promise<UserRecord | null>;
+// Sample data so the Worker runs as is. Delete it once getUser reads your data.
+const SAMPLE_USERS: Record<string, User> = {
+  happy: {
+    isPublic: true,
+    displayName: "Happy",
+    bio: "Building on brand",
+    avatarUrl: "https://cdn.brand.example/avatars/happy.png",
+    twitter: "happy",
+    wallets: {
+      evm: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+      bitcoin: "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+      solana: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+    },
+  },
+};
+
+/**
+ * Finds a user by their ENS label (the normalized username). Returns null when
+ * there's no such user. Throw on a real failure, so the lookup returns 500.
+ *
+ * Read from wherever your users already live. Don't add a database for this.
+ */
+async function getUser(label: string): Promise<User | null> {
+  // Option A: your own API.
+  // const res = await fetch(
+  //   `https://api.brand.example/internal/users/${encodeURIComponent(label)}`,
+  //   { signal: AbortSignal.timeout(2000) }, // stay well inside the 5 s limit
+  // );
+  // if (res.status === 404) return null;
+  // if (!res.ok) throw new Error(`User API answered ${res.status}`);
+  // return toUser(await res.json());
+
+  // Option B: your database, one indexed read on the normalized username.
+  // const row = await db.query(
+  //   "SELECT ... FROM users WHERE ens_label = $1", [label],
+  // );
+  // return row ? toUser(row) : null;
+
+  return SAMPLE_USERS[label] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// 2. Usernames
+// ---------------------------------------------------------------------------
 
 /** The ENS label for a username, or null when it can't be one. */
 export function toEnsLabel(username: string): string | null {
@@ -40,256 +133,186 @@ export function toEnsLabel(username: string): string | null {
     const label = normalize(username);
     return label && !label.includes(".") ? label : null;
   } catch {
-    return null;
+    return null; // e.g. "happy_doe", "@happy", "happy doe"
   }
 }
 
-// One record. Empty strings fail, so blank fields are left out instead of
-// resolving as "".
-const TextValue = z.string().trim().min(1).max(4096);
-const Handle = TextValue.transform((handle) => handle.replace(/^@/, ""));
-// https only: a javascript: or http: URL in a public record is a phishing vector.
-const HttpsUrl = TextValue.refine((value) => URL.canParse(value) && value.startsWith("https://"));
-const ImageUrl = TextValue.refine(
-  (value) => URL.canParse(value) && /^(https|ipfs):\/\//.test(value),
-);
+// ---------------------------------------------------------------------------
+// 3. Coin types: which chain each address is for
+// ---------------------------------------------------------------------------
+
+// Non-EVM chains use their SLIP-44 number:
+// https://github.com/satoshilabs/slips/blob/master/slip-0044.md
+// Don't use 60 (Ethereum) for EVM wallets: DEFAULT_EVM below covers Ethereum too.
+const SLIP44 = {
+  bitcoin: 0,
+  dogecoin: 3,
+  solana: 501,
+} as const;
+
+// EVM chains use 0x80000000 | chainId (ENSIP-11). Same as viem's toCoinType.
+function evmCoinType(chainId: number): number {
+  return (0x80000000 | chainId) >>> 0;
+}
+
+// chainId 0 is the default EVM address (ENSIP-19): 2147483648. It answers for
+// Ethereum and every EVM chain that has no address of its own.
+const DEFAULT_EVM = evmCoinType(0);
+
+const CHAIN_IDS = { base: 8453, optimism: 10, arbitrum: 42161 } as const;
+
+// ---------------------------------------------------------------------------
+// 4. Validating records
+// ---------------------------------------------------------------------------
+// A bad value drops only its own record. Throwing would fail the whole lookup.
+
+const Text = z.string().trim().min(1).max(4096);
+const Handle = Text.transform((handle) => handle.replace(/^@/, ""));
+// https only: a javascript: or http: link in a public record is a phishing risk.
+const HttpsUrl = Text.refine((v) => URL.canParse(v) && v.startsWith("https://"));
+const ImageUrl = Text.refine((v) => URL.canParse(v) && /^(https|ipfs):\/\//.test(v));
+const Contenthash = Text.regex(/^(ipfs|ipns|ar|bzz|onion3|sia):\/\/.+/);
+
+// EVM addresses go out checksummed.
 const EvmAddress = z
   .string()
-  .refine((value) => isAddress(value, { strict: false }))
-  .transform((value) => getAddress(value));
-const Contenthash = z
-  .string()
-  .max(4096)
-  .regex(/^(ipfs|ipns|ar|bzz|onion3|sia):\/\/.+/);
-
-// Profile v1. strictObject rejects unknown top-level fields, which the
-// gateway would reject too.
-const Profile = z.strictObject({
-  version: z.literal(1),
-  username: z.string().min(1),
-  texts: z
-    .record(z.string().min(1).max(256), z.string().max(4096))
-    .refine((texts) => Object.keys(texts).length <= 128),
-  addresses: z
-    .record(z.string().regex(/^(0|[1-9][0-9]*)$/), z.string().min(1).max(1024))
-    .refine((addresses) => Object.keys(addresses).length <= 128),
-  contenthash: z.string().optional(),
-});
-type Profile = z.infer<typeof Profile>;
+  .refine((v) => isAddress(v, { strict: false }))
+  .transform((v) => getAddress(v));
+// Format checks for other chains. The gateway does the full decode, and a
+// value it rejects fails only that record.
+const BitcoinAddress = z.string().regex(/^(bc1[02-9ac-hj-np-z]{11,71}|[13][1-9A-HJ-NP-Za-km-z]{25,34})$/);
+const SolanaAddress = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 
 /** The parsed value, or undefined when it's missing or invalid. */
 function valid<T>(schema: z.ZodType<T>, value: unknown): T | undefined {
+  if (value === undefined || value === null) return undefined;
   const parsed = schema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
 
-/** Drops undefined entries, so a bad field leaves out only its own record. */
-function compact(entries: Record<string, string | undefined>) {
+/** Keeps only the entries that have a value. */
+function compact(entries: Record<string, string | undefined>): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(entries).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined,
-    ),
+    Object.entries(entries).filter((entry): entry is [string, string] => entry[1] !== undefined),
   );
 }
 
-function buildProfile(username: string, user: UserRecord): Profile {
-  const displayName = valid(TextValue, user.displayName);
-  const evmAddress = valid(EvmAddress, user.verifiedEvmAddress);
-  if (user.verifiedEvmAddress && !evmAddress) {
-    console.error("Invalid stored EVM address", { label: username });
-  }
+// ---------------------------------------------------------------------------
+// 5. The profile
+// ---------------------------------------------------------------------------
+
+// Profile v1. strictObject rejects extra top-level fields, as the gateway does.
+const Profile = z.strictObject({
+  version: z.literal(1),
+  username: z.string().min(1),
+  texts: z.record(z.string().min(1).max(256), z.string().max(4096)),
+  addresses: z.record(z.string().regex(/^(0|[1-9][0-9]*)$/), z.string().min(1).max(1024)),
+  contenthash: z.string().optional(),
+});
+
+function buildProfile(label: string, user: User) {
+  const displayName = valid(Text, user.displayName);
+
+  const texts = compact({
+    name: displayName, // set both: many apps still read only `name`
+    alias: displayName,
+    description: valid(Text, user.bio),
+    avatar: valid(ImageUrl, user.avatarUrl),
+    url: valid(HttpsUrl, user.website),
+    "com.twitter": valid(Handle, user.twitter),
+    "com.github": valid(Handle, user.github),
+    // Your own data: reverse your domain, e.g. "com.brand.tier": user.tier
+  });
+
+  // Keys are coin types as decimal strings. Values are plain address strings.
+  const addresses = compact({
+    [DEFAULT_EVM]: valid(EvmAddress, user.wallets.evm),
+    [evmCoinType(CHAIN_IDS.base)]: valid(EvmAddress, user.wallets.base),
+    [SLIP44.bitcoin]: valid(BitcoinAddress, user.wallets.bitcoin),
+    [SLIP44.solana]: valid(SolanaAddress, user.wallets.solana),
+    // More EVM chains: [evmCoinType(CHAIN_IDS.optimism)]: valid(EvmAddress, user.wallets.optimism)
+    // More non-EVM chains: [SLIP44.dogecoin]: valid(DogecoinAddress, user.wallets.dogecoin)
+  });
 
   return Profile.parse({
     version: 1,
-    username,
-    texts: compact({
-      name: displayName,
-      alias: displayName,
-      description: valid(TextValue, user.bio),
-      avatar: valid(ImageUrl, user.avatarUrl),
-      url: valid(HttpsUrl, user.website),
-      "com.twitter": valid(Handle, user.twitterHandle),
-      "com.github": valid(Handle, user.githubHandle),
-      "com.brand.tier": valid(TextValue, user.tier),
-    }),
-    addresses: compact({ "2147483648": evmAddress }),
-    contenthash: valid(Contenthash, user.siteContenthash),
+    username: label, // exactly the requested label, never the display name
+    texts,
+    addresses,
+    contenthash: valid(Contenthash, user.ipfsSite),
   });
 }
 
-/**
- * Constant-time compare, so response timing doesn't leak a token. Takes a list
- * so the old and new token both work while you rotate.
- */
+// ---------------------------------------------------------------------------
+// 6. Auth and CORS
+// ---------------------------------------------------------------------------
+
+/** Constant-time compare against each accepted token. */
 function hasValidToken(request: Request, tokens: string[]): boolean {
   const digest = (value: string) => createHash("sha256").update(value).digest();
   const header = digest(request.headers.get("authorization") ?? "");
   let matched = false;
   for (const token of tokens) {
-    // No early exit, so timing doesn't reveal which token matched.
     if (timingSafeEqual(header, digest(`Bearer ${token}`))) matched = true;
   }
   return matched;
 }
 
-// The App's "Test username" button calls the endpoint from this origin. Real
-// lookups come from the gateway, server to server, and don't need CORS.
-const NAMESPACE_APP_ORIGIN = "https://app.namespace.ninja";
+// The App's "Test username" button calls from this origin. Real lookups come
+// from the Namespace gateway, server to server, and don't need CORS.
+const NAMESPACE_APP = "https://app.namespace.ninja";
 
 function corsHeaders(request: Request): Record<string, string> {
-  if (request.headers.get("origin") !== NAMESPACE_APP_ORIGIN) return {};
+  if (request.headers.get("origin") !== NAMESPACE_APP) return {};
   return {
-    "Access-Control-Allow-Origin": NAMESPACE_APP_ORIGIN,
+    "Access-Control-Allow-Origin": NAMESPACE_APP,
     "Access-Control-Allow-Headers": "Authorization",
     "Access-Control-Allow-Methods": "GET",
     Vary: "Origin",
   };
 }
 
-function lastPathSegment(url: string): string | null {
-  const segment = new URL(url).pathname.split("/").pop();
-  if (!segment) return null;
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return null;
-  }
-}
-
-export async function handleProfileRequest(
-  request: Request,
-  findUserByEnsLabel: FindUserByEnsLabel,
-  tokens: string[],
-): Promise<Response> {
-  const headers = corsHeaders(request);
-  const empty = (status: number) => new Response(null, { status, headers });
-
-  if (request.method === "OPTIONS") return empty(204);
-  if (request.method !== "GET") return empty(405);
-  if (!hasValidToken(request, tokens)) return empty(401);
-
-  const username = lastPathSegment(request.url);
-  // Namespace only sends normalized labels; anything else can't match a user.
-  if (!username || toEnsLabel(username) !== username) return empty(404);
-
-  try {
-    const user = await findUserByEnsLabel(username);
-    if (!user || !user.isPublic) return empty(404);
-    return Response.json(buildProfile(username, user), { headers });
-  } catch (error) {
-    // A failed lookup, never a fake 404: a 404 tells wallets the name doesn't exist.
-    console.error("Profile lookup failed", { username, error });
-    return empty(500);
-  }
-}
-```
-
-## Cloudflare Worker
-
-Deploy the Worker on its own route, such as `api.brand.example`, and save that as the base URL. `nodejs_compat` is required for `node:crypto`.
-
-```jsonc wrangler.jsonc
-{
-  "name": "ens-profile-endpoint",
-  "main": "src/worker.ts",
-  "compatibility_date": "2026-11-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "routes": [{ "pattern": "api.brand.example", "custom_domain": true }],
-  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<your Hyperdrive config id>" }]
-}
-```
-
-Hyperdrive is Cloudflare's connection pool in front of the database the app already runs. It doesn't store data. Point it at that database once:
-
-```sh
-npx wrangler hyperdrive create app-db --connection-string="$DATABASE_URL"
-```
-
-The only schema change is the `ens_label` column with a unique index on the existing users table, so each lookup is one indexed read:
-
-```sql
-ALTER TABLE users ADD COLUMN ens_label text;
-CREATE UNIQUE INDEX users_ens_label ON users (ens_label);
-```
-
-Store the token as a secret, never in `wrangler.jsonc`. To rotate, put the old value in `ENS_ADAPTER_TOKEN_PREVIOUS`, the new one in `ENS_ADAPTER_TOKEN`, save the new one in the App, then delete the previous secret.
-
-```sh
-npx wrangler secret put ENS_ADAPTER_TOKEN
-npx wrangler deploy
-```
-
-```ts src/worker.ts
-import postgres from "postgres";
-import {
-  type FindUserByEnsLabel,
-  handleProfileRequest,
-  type UserRecord,
-} from "./profile-endpoint";
-
-interface Env {
-  // Hyperdrive pools connections to your existing Postgres. It stores nothing.
-  HYPERDRIVE: Hyperdrive;
-  ENS_ADAPTER_TOKEN: string;
-  /** Set only while rotating, then delete it. */
-  ENS_ADAPTER_TOKEN_PREVIOUS?: string;
-}
-
-type UserRow = {
-  ens_label: string;
-  is_public: boolean;
-  display_name: string | null;
-  bio: string | null;
-  avatar_url: string | null;
-  website: string | null;
-  twitter_handle: string | null;
-  github_handle: string | null;
-  tier: string | null;
-  verified_evm_address: string | null;
-  site_contenthash: string | null;
-};
-
-function toUserRecord(row: UserRow): UserRecord {
-  return {
-    ensLabel: row.ens_label,
-    isPublic: row.is_public,
-    displayName: row.display_name,
-    bio: row.bio,
-    avatarUrl: row.avatar_url,
-    website: row.website,
-    twitterHandle: row.twitter_handle,
-    githubHandle: row.github_handle,
-    tier: row.tier,
-    verifiedEvmAddress: row.verified_evm_address,
-    siteContenthash: row.site_contenthash,
-  };
-}
+// ---------------------------------------------------------------------------
+// 7. The route: GET /{username}
+// ---------------------------------------------------------------------------
 
 export default {
-  async fetch(request, env, ctx): Promise<Response> {
-    if (!env.ENS_ADAPTER_TOKEN) return new Response(null, { status: 500 });
+  async fetch(request, env): Promise<Response> {
+    const headers = corsHeaders(request);
+    const reply = (status: number) => new Response(null, { status, headers });
 
-    const sql = postgres(env.HYPERDRIVE.connectionString, { max: 1, fetch_types: false });
+    if (request.method === "OPTIONS") return reply(204);
+    if (request.method !== "GET") return reply(405);
 
-    // One indexed read on your existing users table. Name the columns:
-    // SELECT * reads every column, including ones added later.
-    const findUserByEnsLabel: FindUserByEnsLabel = async (label) => {
-      const [row] = await sql<UserRow[]>`
-        SELECT ens_label, is_public, display_name, bio, avatar_url, website,
-               twitter_handle, github_handle, tier, verified_evm_address, site_contenthash
-        FROM users WHERE ens_label = ${label}`;
-      return row ? toUserRecord(row) : null;
-    };
-
+    if (!env.ENS_ADAPTER_TOKEN) {
+      console.error("ENS_ADAPTER_TOKEN is not set");
+      return reply(500);
+    }
     const tokens = [env.ENS_ADAPTER_TOKEN, env.ENS_ADAPTER_TOKEN_PREVIOUS].filter(
       (token): token is string => Boolean(token),
     );
-    const response = await handleProfileRequest(request, findUserByEnsLabel, tokens);
-    // Close after the response, so the connection never delays the lookup.
-    ctx.waitUntil(sql.end());
-    return response;
+    if (!hasValidToken(request, tokens)) return reply(401);
+
+    // The username is the last path segment, URL-encoded.
+    let label: string;
+    try {
+      label = decodeURIComponent(new URL(request.url).pathname.split("/").pop() ?? "");
+    } catch {
+      return reply(404);
+    }
+    // Namespace only sends normalized labels. Anything else can't be a user.
+    if (!label || toEnsLabel(label) !== label) return reply(404);
+
+    try {
+      const user = await getUser(label);
+      // Private, suspended or deleted users look exactly like unknown ones.
+      if (!user || !user.isPublic) return reply(404);
+      return Response.json(buildProfile(label, user), { headers });
+    } catch (error) {
+      // Never answer 404 here: that tells wallets the name doesn't exist.
+      console.error("Profile lookup failed", { label, error });
+      return reply(500);
+    }
   },
 } satisfies ExportedHandler<Env>;
 ```
-
-Rename the table and columns to match your schema. If the app's data isn't in Postgres, keep the Worker and change only `findUserByEnsLabel` to query the store the app already uses. Keep it to one read per lookup.

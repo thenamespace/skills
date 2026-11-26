@@ -201,22 +201,46 @@ Add these if and only if the account is an AI agent. A human user never gets the
 
 ## Addresses
 
-Keys are ENS coin types as decimal strings. Values are plain, human-readable address strings: the gateway encodes them to bytes. Walk this per user:
+`addresses` maps a coin type to an address. The key is the coin type as a decimal string, and the value is the plain address string the user would paste into a wallet. The gateway encodes it to bytes.
+
+### Working out the coin type
+
+Pick the rule by chain family. Never guess a number: a wrong coin type puts the address on the wrong chain.
 
 ```
-Has the user proven control of an EVM address?
-├── No  → no EVM key
-└── Yes → "2147483648": getAddress(addr)
-          This default answers for Ethereum and every EVM chain. Don't also send "60" with the same address.
-          Does the user want a different address on one specific chain?
-          └── Yes → add toCoinType(chainId) from viem, e.g. Base 8453 → "2147492101"
-Has the user proven a Bitcoin address?  → "0": mainnet form (bc1…, 1…, 3…)
-Has the user proven a Solana address?   → "501": base58 address
-Other chains → the chain's SLIP-44 number
+Is the chain EVM (Ethereum, Base, Optimism, Arbitrum, Polygon, …)?
+├── Yes
+│   ├── Same address on every EVM chain (most users) → 2147483648 only
+│   │     This is the default EVM address (ENSIP-19, chainId 0). It also answers
+│   │     for Ethereum mainnet, so never add 60 with the same address.
+│   └── A different address on one chain → 0x80000000 | chainId (ENSIP-11)
+│         In code: (0x80000000 | chainId) >>> 0, or viem's toCoinType(chainId).
+│         Base 8453 → 2147492101, Optimism 10 → 2147483658, Arbitrum 42161 → 2147525809
+└── No → the chain's SLIP-44 number
+          Bitcoin 0, Litecoin 2, Dogecoin 3, Solana 501.
+          For any other chain, look the number up in the SLIP-44 registry:
+          https://github.com/satoshilabs/slips/blob/master/slip-0044.md
 ```
 
-- **Validate every address before sending it, and drop only the bad record.** A thrown error becomes a `5xx` and fails the whole lookup. EVM: `isAddress` then `getAddress`. Other chains: a format check (Solana base58, 32–44 characters) is enough, because the gateway does the full decode and a value it rejects fails only that record. An invalid value under a chain key doesn't fall back to the default address, so that chain resolves to nothing.
-- **Never send an address the user hasn't proven they control.** This record decides where money goes. A pasted, unverified address lets anyone redirect payments meant for that user.
+| Chain | Key | Value format |
+| --- | --- | --- |
+| Every EVM chain (default) | `2147483648` | `0x…`, checksummed with viem's `getAddress` |
+| One EVM chain | `0x80000000 \| chainId` in decimal | `0x…`, checksummed |
+| Bitcoin | `0` | Mainnet only: `bc1…`, `1…` or `3…`. Never a testnet `tb1…` |
+| Solana | `501` | Base58 public key, 32–44 characters |
+
+### Which addresses to send
+
+```
+For each wallet on the user's record:
+├── Not proven (pasted, imported, unverified) → leave it out
+├── Fails the format check for its chain      → leave it out, log it
+└── Proven and valid                          → add it under its coin type
+```
+
+- **Proven** means the user signed a message with that wallet (SIWE, SIWS), or it's a non-custodial embedded wallet whose keys the user can export. This record decides where money goes, so a pasted address would let anyone redirect payments meant for that user.
+- **Validate before sending and drop only the bad record.** A thrown error becomes a `5xx` and fails the whole lookup. EVM: `isAddress`, then `getAddress`. Other chains: a format check is enough, because the gateway decodes the address fully and a value it rejects fails only that record.
+- An invalid value under a chain-specific key doesn't fall back to the default address, so that chain resolves to nothing.
 
 ## Contenthash
 
@@ -246,7 +270,7 @@ The endpoint answers in under 300 ms. The gateway's hard limit is 5 seconds, but
 
 1. Answer the questions under Before writing code.
 2. Add the `ens_label` column with a unique index, backfill it with `toEnsLabel` and the collision rule, and set it wherever usernames are created or changed.
-3. Write the handler. Follow `references/example-endpoint.md` in this skill: it's framework-neutral and validates the profile with zod.
+3. Write the handler. Follow `references/example-endpoint.md` in this skill: one Cloudflare Worker file, with the user lookup left for you to point at your existing API or database.
 4. Deploy, then check from a shell:
    ```sh
    curl -i -H "Authorization: Bearer $TOKEN" https://api.brand.example/happy
