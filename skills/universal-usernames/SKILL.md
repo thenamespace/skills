@@ -140,7 +140,7 @@ Is there a standard key for it? (table below)
 | Key | Value |
 | --- | --- |
 | `name` and `alias` | Display name. Set both to the same value: some apps read `name`, newer ones read `alias` (ENSIP-18). |
-| `avatar` | `https://` or `ipfs://` image URL, or an NFT in ENSIP-12 form (see NFT avatars). Use a stable URL: a signed or expiring one breaks once cached. |
+| `avatar` | The image link the app already has (`https://` or `ipfs://`), or an NFT in ENSIP-12 form (see NFT avatars) |
 | `header` | Banner image, same formats as `avatar` |
 | `description` | Short bio |
 | `url` | Website. Send only `https://` URLs and drop anything else: `javascript:` or `http:` in a public record is a phishing vector |
